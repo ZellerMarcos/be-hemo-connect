@@ -51,15 +51,74 @@ Tambem e possivel executar usando diretamente o Python do ambiente virtual:
 
 O servidor fica disponivel em `http://127.0.0.1:8000`.
 
-## Endpoints atuais
+## Endpoints de hemocentros
 
 | Metodo | Rota | Finalidade |
 | --- | --- | --- |
-| GET | `/health` | Verifica se a API esta respondendo. |
-| GET | `/docs` | Abre a documentacao interativa Swagger. |
-| GET | `/redoc` | Abre a documentacao alternativa ReDoc. |
+| GET | `/hemocentros` | Lista os hemocentros. |
+| GET | `/hemocentros/{id}` | Busca um hemocentro pelo ID. |
+| POST | `/hemocentros` | Cria um hemocentro. |
+| PUT | `/hemocentros/{id}` | Atualiza um hemocentro. |
+| DELETE | `/hemocentros/{id}` | Exclui um hemocentro. |
 
-O endpoint `/health` retorna `{"status": "ok"}` quando a aplicacao esta funcionando.
+Os campos obrigatorios sao `nome`, `endereco`, `telefone` e `status`. O campo
+`status` aceita somente `ATIVO` ou `INATIVO`.
+
+## Endpoints de usuarios
+
+| Metodo | Rota | Finalidade |
+| --- | --- | --- |
+| GET | `/usuarios` | Lista os usuarios cadastrados. |
+| GET | `/usuarios/{id}` | Busca um usuario pelo ID. |
+| POST | `/usuarios` | Cadastra um usuario recebendo uma senha e armazenando seu hash. |
+| PUT | `/usuarios/{id}` | Atualiza os dados permitidos do usuario. |
+| DELETE | `/usuarios/{id}` | Exclui um usuario. |
+
+### Fluxo da senha
+
+O POST recebe `senha`, aplica Argon2id e armazena somente o resultado em
+`senha_hash` no SQL Server:
+
+`senha` -> `Argon2id` -> `hash` -> `SQL Server`
+
+A senha original nunca e armazenada ou retornada pela API. O salt e gerado
+automaticamente pela biblioteca, de forma criptograficamente segura e unica em
+cada hash. Os parametros de custo centralizados no modulo de seguranca usam
+`time_cost=2`, `memory_cost=65536 KiB`, `parallelism=2`, `hash_len=32` e
+`salt_len=16`, equilibrando protecao e tempo adequado para desenvolvimento
+local e um projeto universitario.
+
+Em uma etapa futura, a senha informada podera ser validada com
+`verify_password()` contra o hash armazenado. O PUT atual nao altera a senha.
+
+## Autenticacao basica
+
+`POST /auth/login` recebe e-mail e senha, localiza o usuario, verifica se ele
+esta `ATIVO` e compara a senha com o hash Argon2id armazenado. E-mail inexistente,
+senha incorreta e usuario `INATIVO` retornam a mesma resposta `401` generica.
+O retorno contem somente dados basicos do usuario; nunca inclui `senha` ou
+`senha_hash`.
+
+## 2FA por e-mail
+
+O segundo fator usa um codigo aleatorio de seis digitos enviado ao e-mail
+cadastrado depois que o e-mail e a senha sao validados com Argon2id. O codigo
+vale por cinco minutos, e apenas o hash dele e armazenado na tabela
+`dbo.two_factor_codes`. Depois de validado, o codigo e marcado como utilizado e
+nao pode ser reutilizado. Um novo login invalida o codigo pendente anterior.
+
+Fluxo:
+
+`Login` -> `E-mail + senha` -> `Argon2id` -> `Senha correta` ->
+`Geração do código` -> `Envio por e-mail` -> `Código informado` ->
+`Validação` -> `2FA aprovado`
+
+O endpoint `POST /auth/login` retorna `{"requires_2fa": true}` quando o código
+foi gerado e enviado. O endpoint `POST /auth/2fa/verify` recebe `email` e
+`code`, retornando `{"authenticated": true}` somente para um código válido.
+O código não aparece em respostas ou logs, e o envio depende das variáveis
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` e `SMTP_FROM` do
+ambiente. Esta etapa não cria sessão, JWT, logout ou autorização.
 
 ## Testes
 

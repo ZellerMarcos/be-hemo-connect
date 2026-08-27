@@ -1,3 +1,10 @@
 fastapi
 uvicorn
 pydantic
+sqlalchemy
+pyodbc
+pytest
+httpx
+python-dotenv
+email-validator
+argon2-cffi
