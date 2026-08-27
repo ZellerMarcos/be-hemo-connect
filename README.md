@@ -64,6 +64,19 @@ O servidor fica disponivel em `http://127.0.0.1:8000`.
 Os campos obrigatorios sao `nome`, `endereco`, `telefone` e `status`. O campo
 `status` aceita somente `ATIVO` ou `INATIVO`.
 
+## Endpoints de usuarios
+
+| Metodo | Rota | Finalidade |
+| --- | --- | --- |
+| GET | `/usuarios` | Lista os usuarios cadastrados. |
+| GET | `/usuarios/{id}` | Busca um usuario pelo ID. |
+| POST | `/usuarios` | Cadastra um usuario usando um `senha_hash` ja existente. |
+| PUT | `/usuarios/{id}` | Atualiza os dados permitidos do usuario. |
+| DELETE | `/usuarios/{id}` | Exclui um usuario. |
+
+O campo `senha_hash` e obrigatorio no cadastro, mas nunca e retornado pela API.
+Este CRUD nao gera ou altera hashes de senha.
+
 ## Testes
 
 O teste atual verifica o endpoint de saude por HTTP. Como ele acessa o servidor
