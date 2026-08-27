@@ -175,3 +175,62 @@ def test_hashes_for_same_password_are_different():
     second_hash = hash_password("SenhaSegura123!")
 
     assert first_hash != second_hash
+
+
+def test_login_with_correct_password():
+    created = create_user()
+
+    response = client.post(
+        "/auth/login",
+        json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["id"] == created["id"]
+    assert response.json()["email"] == "joao@example.com"
+
+
+def test_login_with_incorrect_password():
+    create_user()
+
+    response = client.post(
+        "/auth/login",
+        json={"email": "joao@example.com", "senha": "SenhaErrada!"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "E-mail ou senha inválidos."
+
+
+def test_login_with_unknown_email():
+    response = client.post(
+        "/auth/login",
+        json={"email": "ausente@example.com", "senha": "SenhaSegura123!"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "E-mail ou senha inválidos."
+
+
+def test_inactive_user_cannot_login():
+    create_user(status="INATIVO")
+
+    response = client.post(
+        "/auth/login",
+        json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "E-mail ou senha inválidos."
+
+
+def test_login_response_does_not_expose_password_fields():
+    create_user()
+
+    response = client.post(
+        "/auth/login",
+        json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+    )
+
+    assert "senha" not in response.json()
+    assert "senha_hash" not in response.json()

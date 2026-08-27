@@ -91,6 +91,14 @@ local e um projeto universitario.
 Em uma etapa futura, a senha informada podera ser validada com
 `verify_password()` contra o hash armazenado. O PUT atual nao altera a senha.
 
+## Autenticacao basica
+
+`POST /auth/login` recebe e-mail e senha, localiza o usuario, verifica se ele
+esta `ATIVO` e compara a senha com o hash Argon2id armazenado. E-mail inexistente,
+senha incorreta e usuario `INATIVO` retornam a mesma resposta `401` generica.
+O retorno contem somente dados basicos do usuario; nunca inclui `senha` ou
+`senha_hash`.
+
 ## Testes
 
 O teste atual verifica o endpoint de saude por HTTP. Como ele acessa o servidor
