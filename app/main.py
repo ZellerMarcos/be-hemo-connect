@@ -5,8 +5,8 @@ from app.routes.health import router as health_router
 
 
 app = FastAPI(
-    title="lib.tech API",
-    description="API do Sistema de Biblioteca Inteligente e Inclusiva.",
+    title="Hemo Connect API",
+    description="API para conectar doadores e hemocentros.",
 )
 
 app.add_middleware(

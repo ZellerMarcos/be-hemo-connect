@@ -1,8 +1,8 @@
-# lib.tech - Backend
+# Hemo Connect - Backend
 
-Backend da biblioteca inteligente e inclusiva para instituicoes de ensino.
-Este repositorio faz parte de um projeto universitario e, nesta etapa, fornece
-uma API simples para verificar se o servico esta funcionando.
+Backend do Hemo Connect, uma plataforma para facilitar o agendamento de doacoes,
+aproximar doadores dos hemocentros e incentivar uma frequencia maior de doacoes.
+Nesta etapa, fornece uma API simples para verificar se o servico esta funcionando.
 
 ## Tecnologias
 
@@ -88,5 +88,5 @@ be-lib-tech/
 ## Escopo atual
 
 Ainda nao fazem parte desta etapa o banco MySQL, o ORM SQLAlchemy, autenticacao,
-gerenciamento de usuarios, emprestimos e recomendacoes. Essas funcionalidades
-serao adicionadas separadamente, de forma incremental.
+gerenciamento de usuarios, agendamento de doacoes e integracao com hemocentros.
+Essas funcionalidades serao adicionadas separadamente, de forma incremental.
