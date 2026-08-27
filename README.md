@@ -51,15 +51,18 @@ Tambem e possivel executar usando diretamente o Python do ambiente virtual:
 
 O servidor fica disponivel em `http://127.0.0.1:8000`.
 
-## Endpoints atuais
+## Endpoints de hemocentros
 
 | Metodo | Rota | Finalidade |
 | --- | --- | --- |
-| GET | `/health` | Verifica se a API esta respondendo. |
-| GET | `/docs` | Abre a documentacao interativa Swagger. |
-| GET | `/redoc` | Abre a documentacao alternativa ReDoc. |
+| GET | `/hemocentros` | Lista os hemocentros. |
+| GET | `/hemocentros/{id}` | Busca um hemocentro pelo ID. |
+| POST | `/hemocentros` | Cria um hemocentro. |
+| PUT | `/hemocentros/{id}` | Atualiza um hemocentro. |
+| DELETE | `/hemocentros/{id}` | Exclui um hemocentro. |
 
-O endpoint `/health` retorna `{"status": "ok"}` quando a aplicacao esta funcionando.
+Os campos obrigatorios sao `nome`, `endereco`, `telefone` e `status`. O campo
+`status` aceita somente `ATIVO` ou `INATIVO`.
 
 ## Testes
 
