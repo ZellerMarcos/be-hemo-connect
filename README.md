@@ -70,12 +70,26 @@ Os campos obrigatorios sao `nome`, `endereco`, `telefone` e `status`. O campo
 | --- | --- | --- |
 | GET | `/usuarios` | Lista os usuarios cadastrados. |
 | GET | `/usuarios/{id}` | Busca um usuario pelo ID. |
-| POST | `/usuarios` | Cadastra um usuario usando um `senha_hash` ja existente. |
+| POST | `/usuarios` | Cadastra um usuario recebendo uma senha e armazenando seu hash. |
 | PUT | `/usuarios/{id}` | Atualiza os dados permitidos do usuario. |
 | DELETE | `/usuarios/{id}` | Exclui um usuario. |
 
-O campo `senha_hash` e obrigatorio no cadastro, mas nunca e retornado pela API.
-Este CRUD nao gera ou altera hashes de senha.
+### Fluxo da senha
+
+O POST recebe `senha`, aplica Argon2id e armazena somente o resultado em
+`senha_hash` no SQL Server:
+
+`senha` -> `Argon2id` -> `hash` -> `SQL Server`
+
+A senha original nunca e armazenada ou retornada pela API. O salt e gerado
+automaticamente pela biblioteca, de forma criptograficamente segura e unica em
+cada hash. Os parametros de custo centralizados no modulo de seguranca usam
+`time_cost=2`, `memory_cost=65536 KiB`, `parallelism=2`, `hash_len=32` e
+`salt_len=16`, equilibrando protecao e tempo adequado para desenvolvimento
+local e um projeto universitario.
+
+Em uma etapa futura, a senha informada podera ser validada com
+`verify_password()` contra o hash armazenado. O PUT atual nao altera a senha.
 
 ## Testes
 

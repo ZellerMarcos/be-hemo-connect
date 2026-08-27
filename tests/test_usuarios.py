@@ -1,11 +1,14 @@
+import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.database import get_db
 from app.main import app
 from app.models.hemocentro import Base
+from app.models.usuario import Usuario
+from app.security.password import hash_password, verify_password
 
 
 engine = create_engine(
@@ -14,6 +17,13 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 Base.metadata.create_all(engine)
+
+
+@pytest.fixture(autouse=True)
+def clean_database():
+    with Session(engine) as session:
+        session.execute(Base.metadata.tables["usuarios"].delete())
+        session.commit()
 
 
 def override_get_db():
@@ -30,7 +40,7 @@ def payload(**overrides: object) -> dict[str, object]:
         "nome": "Joao Silva",
         "cpf": "12345678901",
         "email": "joao@example.com",
-        "senha_hash": "HASH_DE_TESTE",
+        "senha": "SenhaSegura123!",
         "perfil": "DOADOR",
         "status": "ATIVO",
         "hemocentro_id": None,
@@ -89,11 +99,10 @@ def test_update_user():
         nome="Maria Silva",
         cpf="10987654321",
         email="maria@example.com",
-        senha_hash=None,
         perfil="ENFERMEIRO",
         status="INATIVO",
     )
-    update.pop("senha_hash")
+    update.pop("senha")
 
     response = client.put(f"/usuarios/{created['id']}", json=update)
 
@@ -142,3 +151,27 @@ def test_duplicate_email():
     response = client.post("/usuarios", json=payload(cpf="10987654321"))
 
     assert response.status_code == 409
+
+
+def test_password_is_hashed_and_not_stored_in_plain_text():
+    create_user()
+
+    with Session(engine) as session:
+        stored_hash = session.scalar(select(Usuario.senha_hash))
+
+    assert stored_hash != "SenhaSegura123!"
+    assert stored_hash.startswith("$argon2id$")
+
+
+def test_password_verification():
+    stored_hash = hash_password("SenhaSegura123!")
+
+    assert verify_password("SenhaSegura123!", stored_hash) is True
+    assert verify_password("SenhaErrada!", stored_hash) is False
+
+
+def test_hashes_for_same_password_are_different():
+    first_hash = hash_password("SenhaSegura123!")
+    second_hash = hash_password("SenhaSegura123!")
+
+    assert first_hash != second_hash

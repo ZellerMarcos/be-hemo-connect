@@ -18,7 +18,7 @@ class UsuarioCreate(BaseModel):
     nome: str = Field(min_length=1)
     cpf: str = Field(pattern=r"^\d{11}$")
     email: EmailStr
-    senha_hash: str = Field(min_length=1)
+    senha: str = Field(min_length=1)
     perfil: Perfil
     status: Status
     hemocentro_id: int | None = None
