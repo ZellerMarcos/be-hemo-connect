@@ -99,6 +99,27 @@ senha incorreta e usuario `INATIVO` retornam a mesma resposta `401` generica.
 O retorno contem somente dados basicos do usuario; nunca inclui `senha` ou
 `senha_hash`.
 
+## 2FA por e-mail
+
+O segundo fator usa um codigo aleatorio de seis digitos enviado ao e-mail
+cadastrado depois que o e-mail e a senha sao validados com Argon2id. O codigo
+vale por cinco minutos, e apenas o hash dele e armazenado na tabela
+`dbo.two_factor_codes`. Depois de validado, o codigo e marcado como utilizado e
+nao pode ser reutilizado. Um novo login invalida o codigo pendente anterior.
+
+Fluxo:
+
+`Login` -> `E-mail + senha` -> `Argon2id` -> `Senha correta` ->
+`Geração do código` -> `Envio por e-mail` -> `Código informado` ->
+`Validação` -> `2FA aprovado`
+
+O endpoint `POST /auth/login` retorna `{"requires_2fa": true}` quando o código
+foi gerado e enviado. O endpoint `POST /auth/2fa/verify` recebe `email` e
+`code`, retornando `{"authenticated": true}` somente para um código válido.
+O código não aparece em respostas ou logs, e o envio depende das variáveis
+`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` e `SMTP_FROM` do
+ambiente. Esta etapa não cria sessão, JWT, logout ou autorização.
+
 ## Testes
 
 O teste atual verifica o endpoint de saude por HTTP. Como ele acessa o servidor

@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
@@ -180,14 +181,15 @@ def test_hashes_for_same_password_are_different():
 def test_login_with_correct_password():
     created = create_user()
 
-    response = client.post(
-        "/auth/login",
-        json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
-    )
+    with patch("app.services.auth.send_two_factor_code"):
+        response = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
 
     assert response.status_code == 200
-    assert response.json()["id"] == created["id"]
-    assert response.json()["email"] == "joao@example.com"
+    assert response.json() == {"requires_2fa": True}
+    assert created["id"] is not None
 
 
 def test_login_with_incorrect_password():
@@ -227,10 +229,11 @@ def test_inactive_user_cannot_login():
 def test_login_response_does_not_expose_password_fields():
     create_user()
 
-    response = client.post(
-        "/auth/login",
-        json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
-    )
+    with patch("app.services.auth.send_two_factor_code"):
+        response = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
 
     assert "senha" not in response.json()
     assert "senha_hash" not in response.json()

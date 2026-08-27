@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.schemas.usuario import Perfil, Status
 
@@ -17,3 +17,16 @@ class LoginResponse(BaseModel):
     perfil: Perfil
     status: Status
     hemocentro_id: int | None
+
+
+class LoginTwoFactorRequired(BaseModel):
+    requires_2fa: bool = True
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(pattern=r"^\d{6}$")
+
+
+class TwoFactorVerifyResponse(BaseModel):
+    authenticated: bool
