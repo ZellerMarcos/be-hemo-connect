@@ -14,6 +14,32 @@ from app.services.email import send_two_factor_code
 CODE_VALIDITY = timedelta(minutes=5)
 # A sessão do usuário considera o tempo sem atividade: 45 minutos sem requisição válida encerra a sessão.
 INACTIVITY_TIMEOUT = timedelta(minutes=45)
+# A proteção contra brute force considera até 5 erros em 15 minutos antes de bloquear a conta por 1 hora.
+FAILED_LOGIN_ATTEMPTS_LIMIT = 5
+FAILED_LOGIN_WINDOW = timedelta(minutes=15)
+LOCKOUT_DURATION = timedelta(hours=1)
+
+
+def get_login_error_detail(db: Session, email: str) -> str:
+    # Monta a mensagem mais útil possível para o cliente antes do bloqueio definitivo da conta.
+    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
+    if usuario is None or usuario.status != "ATIVO":
+        return "E-mail ou senha inválidos."
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if usuario.locked_until is not None and usuario.locked_until > now:
+        return "Conta temporariamente bloqueada. Tente novamente em 1 hora."
+
+    if usuario.failed_login_window_started_at is not None:
+        window_elapsed = now - usuario.failed_login_window_started_at
+        if window_elapsed <= FAILED_LOGIN_WINDOW:
+            remaining_attempts = max(FAILED_LOGIN_ATTEMPTS_LIMIT - usuario.failed_login_attempts, 1)
+            return (
+                "E-mail ou senha inválidos. Restam "
+                f"{remaining_attempts} tentativas antes do bloqueio por 1 hora."
+            )
+
+    return "E-mail ou senha inválidos."
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
@@ -21,8 +47,44 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
         return None
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Se o usuário ainda está bloqueado, a API deve responder explicitamente com 403 para não revelar demais.
+    if usuario.locked_until is not None and usuario.locked_until > now:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Conta temporariamente bloqueada. Tente novamente em 1 hora.",
+        )
+
+    # Quando o prazo de bloqueio expirou, o sistema limpa o estado de bloqueio para permitir um novo ciclo.
+    if usuario.locked_until is not None and usuario.locked_until <= now:
+        usuario.locked_until = None
+        usuario.failed_login_attempts = 0
+        usuario.failed_login_window_started_at = None
+
     if not verify_password(password, usuario.senha_hash):
+        # Qualquer senha incorreta é contabilizada em uma janela de 15 minutos.
+        if (
+            usuario.failed_login_window_started_at is None
+            or now - usuario.failed_login_window_started_at > FAILED_LOGIN_WINDOW
+        ):
+            usuario.failed_login_window_started_at = now
+            usuario.failed_login_attempts = 1
+        else:
+            usuario.failed_login_attempts += 1
+
+        # Ao atingir o limite, a conta fica bloqueada por 1 hora para reduzir ataques de força bruta.
+        if usuario.failed_login_attempts >= FAILED_LOGIN_ATTEMPTS_LIMIT:
+            usuario.locked_until = now + LOCKOUT_DURATION
+
+        db.commit()
         return None
+
+    # Tentativa bem-sucedida reinicia o contador para evitar que o bloqueio persista indevidamente.
+    usuario.failed_login_attempts = 0
+    usuario.failed_login_window_started_at = None
+    usuario.locked_until = None
+    db.commit()
     return usuario
 
 

@@ -13,6 +13,7 @@ from app.schemas.auth import (
 )
 from app.services.auth import (
     authenticate_user,
+    get_login_error_detail,
     issue_two_factor_code,
     logout_user,
     update_last_activity,
@@ -29,9 +30,10 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     # Fluxo de login: primeiro valida credenciais e, se corretas, dispara o segundo fator.
     usuario = authenticate_user(db, data.email, data.senha)
     if usuario is None:
+        # O backend informa ao cliente quantas tentativas ainda restam antes do bloqueio de 1 hora.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="E-mail ou senha inválidos.",
+            detail=get_login_error_detail(db, str(data.email)),
         )
     # A senha correta inicia o segundo fator, mas ainda não conclui o login.
     issue_two_factor_code(db, usuario)

@@ -220,6 +220,25 @@ def test_user_session_expires_after_45_minutes_of_inactivity():
     assert response.json()["detail"] == "Sessão expirada por inatividade."
 
 
+def test_user_is_blocked_after_five_failed_logins_in_15_minutes():
+    create_user()
+
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaInvalida123!"},
+        )
+        assert response.status_code == 401
+
+    response = client.post(
+        "/auth/login",
+        json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Conta temporariamente bloqueada. Tente novamente em 1 hora."
+
+
 def test_code_is_not_exposed_in_api_response_or_logs(caplog):
     create_user()
     with patch("app.services.auth.send_two_factor_code") as send_email:
