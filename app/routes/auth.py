@@ -23,12 +23,14 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-mail ou senha inválidos.",
         )
+    # A senha correta inicia o segundo fator, mas ainda não conclui o login.
     issue_two_factor_code(db, usuario)
     return LoginTwoFactorRequired()
 
 
 @router.post("/2fa/verify", response_model=TwoFactorVerifyResponse)
 def verify_two_factor(data: TwoFactorVerifyRequest, db: Session = Depends(get_db)):
+    # O endpoint retorna apenas o resultado da validação; não cria sessão ou token.
     if not verify_two_factor_code(db, str(data.email), data.code):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

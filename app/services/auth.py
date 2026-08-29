@@ -24,6 +24,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
 
 def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Somente o código mais recente deve permanecer válido para este login.
     pending_codes = db.scalars(
         select(TwoFactorCode).where(
             TwoFactorCode.usuario_id == usuario.id,
@@ -45,6 +46,7 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
     try:
         send_two_factor_code(str(usuario.email), code)
     except Exception:
+        # Evita deixar no banco um desafio que nunca chegou ao usuário.
         db.delete(two_factor_code)
         db.commit()
         raise
@@ -67,9 +69,12 @@ def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
         return False
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # A validade é conferida antes da comparação e o código só é consumido
+    # depois de uma correspondência bem-sucedida.
     if two_factor_code.expires_at <= now or not verify_code(code, two_factor_code.code_hash):
         return False
 
+    # Marcar o registro como usado impede a reutilização do mesmo código.
     two_factor_code.used_at = now
     db.commit()
     return True

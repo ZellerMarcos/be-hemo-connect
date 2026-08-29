@@ -8,6 +8,8 @@ load_dotenv()
 
 
 def send_two_factor_code(recipient: str, code: str) -> None:
+    # As credenciais ficam somente no ambiente; o código é usado apenas para
+    # montar a mensagem e nunca é persistido ou registrado em logs.
     message = EmailMessage()
     message["Subject"] = "Código de verificação - Hemo Connect"
     message["From"] = os.environ["MAIL_FROM"]
