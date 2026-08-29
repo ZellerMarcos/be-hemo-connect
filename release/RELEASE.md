@@ -44,6 +44,8 @@ Nesta release, o foco principal foi consolidar o fluxo de acesso do usuário, o 
 - Controle de sessão por tempo de inatividade de 45 minutos.
 - Bloqueio de acesso para usuários com sessão expirada.
 - Logout do sistema.
+- Proteção contra brute force: após 5 tentativas inválidas em uma janela de 15 minutos, a conta é bloqueada temporariamente por 1 hora.
+- Mensagens de resposta do backend para alertar sobre tentativas restantes antes do bloqueio e sobre o período de lockout ativo.
 
 ### 2. Gestão de usuários
 - Cadastro de usuários.
@@ -80,6 +82,8 @@ Nesta release, o foco principal foi consolidar o fluxo de acesso do usuário, o 
 ### Segurança
 - Senhas são armazenadas em formato hash.
 - Validações de unicidade e acesso impedem inconsistências de dados.
+- Bloqueio temporário após múltiplas tentativas de login inválidas para reduzir risco de ataques de força bruta.
+- Controle de janela de tentativas em 15 minutos e lockout de 1 hora para a conta afetada.
 
 ---
 
