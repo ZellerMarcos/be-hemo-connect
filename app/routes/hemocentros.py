@@ -21,6 +21,7 @@ router = APIRouter(prefix="/hemocentros", tags=["Hemocentros"])
 
 
 def find_or_404(db: Session, hemocentro_id: int):
+    # Busca de hemocentro por ID: responde 404 quando o registro não existe.
     hemocentro = get_hemocentro(db, hemocentro_id)
     if hemocentro is None:
         raise HTTPException(status_code=404, detail="Hemocentro não encontrado")
@@ -32,6 +33,7 @@ def read_hemocentros(
     db: Session = Depends(get_db),
     _: object = Depends(require_active_session),
 ):
+    # Qualquer leitura de dados protegidos só ocorre enquanto a sessão está ativa.
     return list_hemocentros(db)
 
 
@@ -41,6 +43,7 @@ def read_hemocentro(
     db: Session = Depends(get_db),
     _: object = Depends(require_active_session),
 ):
+    # A consulta individual também passa pela checagem do timeout de inatividade do backend.
     return find_or_404(db, hemocentro_id)
 
 
@@ -50,6 +53,7 @@ def create_hemocentro_route(
     db: Session = Depends(get_db),
     _: object = Depends(require_active_session),
 ):
+    # Criação de hemocentro precisa de sessão válida para evitar ações sem usuário autenticado.
     return create_hemocentro(db, data)
 
 
@@ -60,6 +64,7 @@ def update_hemocentro_route(
     db: Session = Depends(get_db),
     _: object = Depends(require_active_session),
 ):
+    # Atualização de dados protegidos só é permitida quando a sessão continua ativa.
     hemocentro = find_or_404(db, hemocentro_id)
     return update_hemocentro(db, hemocentro, data)
 
@@ -70,5 +75,6 @@ def delete_hemocentro_route(
     db: Session = Depends(get_db),
     _: object = Depends(require_active_session),
 ):
+    # Exclusão também depende de sessão ativa para cumprir o limite de inatividade do backend.
     hemocentro = find_or_404(db, hemocentro_id)
     delete_hemocentro(db, hemocentro)

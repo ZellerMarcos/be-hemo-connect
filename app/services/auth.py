@@ -12,10 +12,12 @@ from app.services.email import send_two_factor_code
 
 
 CODE_VALIDITY = timedelta(minutes=5)
+# A sessão do usuário considera o tempo sem atividade: 45 minutos sem requisição válida encerra a sessão.
 INACTIVITY_TIMEOUT = timedelta(minutes=45)
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
+    # Primeiro passo do login: localiza o usuário pelo e-mail e valida status e senha.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
         return None
@@ -25,6 +27,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
 
 
 def update_last_activity(db: Session, email: str) -> Usuario | None:
+    # Atualiza a última atividade do usuário no banco para medir o tempo de inatividade.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None:
         return None
@@ -34,6 +37,7 @@ def update_last_activity(db: Session, email: str) -> Usuario | None:
 
 
 def validate_active_session(db: Session, email: str) -> Usuario:
+    # Valida se a sessão continua ativa e se o usuário não excedeu o limite de 45 minutos sem atividade.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
         raise HTTPException(
@@ -43,22 +47,26 @@ def validate_active_session(db: Session, email: str) -> Usuario:
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     if usuario.last_activity_at is None:
+        # Primeira validação: marca a atividade atual para iniciar a contagem do timeout.
         usuario.last_activity_at = now
         db.commit()
         return usuario
 
     if now - usuario.last_activity_at > INACTIVITY_TIMEOUT:
+        # Quando o tempo de inatividade supera o limite, a API nega o acesso como se fosse logout.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessão expirada por inatividade.",
         )
 
+    # Qualquer requisição válida renova a atividade para manter a sessão viva.
     usuario.last_activity_at = now
     db.commit()
     return usuario
 
 
 def logout_user(db: Session, email: str) -> None:
+    # Logout do backend: limpa a última atividade do usuário para encerrar a sessão imediatamente.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is not None:
         usuario.last_activity_at = None
@@ -66,6 +74,7 @@ def logout_user(db: Session, email: str) -> None:
 
 
 def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
+    # Gera um código de 2FA para confirmar que a pessoa é realmente o dono da conta.
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     # Somente o código mais recente deve permanecer válido para este login.
     pending_codes = db.scalars(
@@ -87,6 +96,7 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
     db.add(two_factor_code)
     db.commit()
     try:
+        # Envia o código ao e-mail do usuário, caso a entrega falhe, o registro é descartado.
         send_two_factor_code(str(usuario.email), code)
     except Exception:
         # Evita deixar no banco um desafio que nunca chegou ao usuário.
@@ -96,6 +106,7 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
 
 
 def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
+    # Confere se o código enviado pelo usuário é o código válido e ainda não expirou.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
         return False
@@ -112,8 +123,7 @@ def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
         return False
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    # A validade é conferida antes da comparação e o código só é consumido
-    # depois de uma correspondência bem-sucedida.
+    # A validade é conferida antes da comparação, e o código só é consumido após a confirmação.
     if two_factor_code.expires_at <= now or not verify_code(code, two_factor_code.code_hash):
         return False
 
