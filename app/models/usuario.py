@@ -1,4 +1,6 @@
-from sqlalchemy import Integer, String
+from datetime import datetime
+
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import DB_SCHEMA
@@ -17,3 +19,9 @@ class Usuario(Base):
     perfil: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False)
     hemocentro_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Armazena a última ação válida do usuário para calcular o timeout de inatividade do backend.
+    last_activity_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+        default=None,
+    )
