@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.routes.auth import require_active_session
 from app.schemas.usuario import UsuarioCreate, UsuarioResponse, UsuarioUpdate
 from app.services.usuario import (
     DuplicateUsuarioError,
@@ -31,12 +32,19 @@ def handle_duplicate(error: DuplicateUsuarioError) -> None:
 
 
 @router.get("", response_model=list[UsuarioResponse])
-def read_usuarios(db: Session = Depends(get_db)):
+def read_usuarios(
+    db: Session = Depends(get_db),
+    _: object = Depends(require_active_session),
+):
     return list_usuarios(db)
 
 
 @router.get("/{usuario_id}", response_model=UsuarioResponse)
-def read_usuario(usuario_id: int, db: Session = Depends(get_db)):
+def read_usuario(
+    usuario_id: int,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_active_session),
+):
     return find_or_404(db, usuario_id)
 
 
@@ -50,7 +58,10 @@ def create_usuario_route(data: UsuarioCreate, db: Session = Depends(get_db)):
 
 @router.put("/{usuario_id}", response_model=UsuarioResponse)
 def update_usuario_route(
-    usuario_id: int, data: UsuarioUpdate, db: Session = Depends(get_db)
+    usuario_id: int,
+    data: UsuarioUpdate,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_active_session),
 ):
     usuario = find_or_404(db, usuario_id)
     try:
@@ -60,6 +71,10 @@ def update_usuario_route(
 
 
 @router.delete("/{usuario_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_usuario_route(usuario_id: int, db: Session = Depends(get_db)):
+def delete_usuario_route(
+    usuario_id: int,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_active_session),
+):
     usuario = find_or_404(db, usuario_id)
     delete_usuario(db, usuario)

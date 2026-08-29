@@ -59,7 +59,7 @@ def create_user(**overrides: object) -> dict[str, object]:
 def test_list_users():
     create_user()
 
-    response = client.get("/usuarios")
+    response = client.get("/usuarios", headers={"x-user-email": "joao@example.com"})
 
     assert response.status_code == 200
     assert len(response.json()) == 1
@@ -68,14 +68,17 @@ def test_list_users():
 def test_get_existing_user():
     created = create_user()
 
-    response = client.get(f"/usuarios/{created['id']}")
+    response = client.get(
+        f"/usuarios/{created['id']}",
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 200
     assert response.json() == created
 
 
 def test_get_missing_user():
-    assert client.get("/usuarios/999").status_code == 404
+    assert client.get("/usuarios/999", headers={"x-user-email": "joao@example.com"}).status_code == 404
 
 
 def test_create_user():
@@ -105,7 +108,11 @@ def test_update_user():
     )
     update.pop("senha")
 
-    response = client.put(f"/usuarios/{created['id']}", json=update)
+    response = client.put(
+        f"/usuarios/{created['id']}",
+        json=update,
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 200
     assert response.json()["nome"] == "Maria Silva"
@@ -116,10 +123,16 @@ def test_update_user():
 def test_delete_user():
     created = create_user()
 
-    response = client.delete(f"/usuarios/{created['id']}")
+    response = client.delete(
+        f"/usuarios/{created['id']}",
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 204
-    assert client.get(f"/usuarios/{created['id']}").status_code == 404
+    assert client.get(
+        f"/usuarios/{created['id']}",
+        headers={"x-user-email": "joao@example.com"},
+    ).status_code == 404
 
 
 def test_invalid_cpf():

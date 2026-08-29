@@ -43,25 +43,40 @@ def payload(name: str = "Hemocentro Central") -> dict[str, str]:
 
 
 def test_list_hemocentros():
-    client.post("/hemocentros", json=payload())
+    client.post(
+        "/hemocentros",
+        json=payload(),
+        headers={"x-user-email": "joao@example.com"},
+    )
 
-    response = client.get("/hemocentros")
+    response = client.get("/hemocentros", headers={"x-user-email": "joao@example.com"})
 
     assert response.status_code == 200
     assert len(response.json()) == 1
 
 
 def test_get_hemocentro():
-    created = client.post("/hemocentros", json=payload()).json()
+    created = client.post(
+        "/hemocentros",
+        json=payload(),
+        headers={"x-user-email": "joao@example.com"},
+    ).json()
 
-    response = client.get(f"/hemocentros/{created['id']}")
+    response = client.get(
+        f"/hemocentros/{created['id']}",
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 200
     assert response.json() == created
 
 
 def test_create_hemocentro():
-    response = client.post("/hemocentros", json=payload())
+    response = client.post(
+        "/hemocentros",
+        json=payload(),
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 201
     assert response.json()["nome"] == "Hemocentro Central"
@@ -69,11 +84,19 @@ def test_create_hemocentro():
 
 
 def test_update_hemocentro():
-    created = client.post("/hemocentros", json=payload()).json()
+    created = client.post(
+        "/hemocentros",
+        json=payload(),
+        headers={"x-user-email": "joao@example.com"},
+    ).json()
     updated = payload("Hemocentro Zona Norte")
     updated["status"] = "INATIVO"
 
-    response = client.put(f"/hemocentros/{created['id']}", json=updated)
+    response = client.put(
+        f"/hemocentros/{created['id']}",
+        json=updated,
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 200
     assert response.json()["nome"] == "Hemocentro Zona Norte"
@@ -81,12 +104,22 @@ def test_update_hemocentro():
 
 
 def test_delete_hemocentro():
-    created = client.post("/hemocentros", json=payload()).json()
+    created = client.post(
+        "/hemocentros",
+        json=payload(),
+        headers={"x-user-email": "joao@example.com"},
+    ).json()
 
-    response = client.delete(f"/hemocentros/{created['id']}")
+    response = client.delete(
+        f"/hemocentros/{created['id']}",
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 204
-    assert client.get(f"/hemocentros/{created['id']}").status_code == 404
+    assert client.get(
+        f"/hemocentros/{created['id']}",
+        headers={"x-user-email": "joao@example.com"},
+    ).status_code == 404
 
 
 def test_invalid_status():
@@ -101,7 +134,7 @@ def test_invalid_status():
 @pytest.mark.parametrize("method", ["get", "put", "delete"])
 def test_missing_hemocentro(method: str):
     request = getattr(client, method)
-    kwargs = {"json": payload()} if method == "put" else {}
+    kwargs = {"json": payload(), "headers": {"x-user-email": "joao@example.com"}} if method == "put" else {"headers": {"x-user-email": "joao@example.com"}}
 
     response = request("/hemocentros/999", **kwargs)
 

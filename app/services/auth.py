@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,6 +12,7 @@ from app.services.email import send_two_factor_code
 
 
 CODE_VALIDITY = timedelta(minutes=5)
+INACTIVITY_TIMEOUT = timedelta(minutes=45)
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
@@ -20,6 +22,47 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
     if not verify_password(password, usuario.senha_hash):
         return None
     return usuario
+
+
+def update_last_activity(db: Session, email: str) -> Usuario | None:
+    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
+    if usuario is None:
+        return None
+    usuario.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    return usuario
+
+
+def validate_active_session(db: Session, email: str) -> Usuario:
+    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
+    if usuario is None or usuario.status != "ATIVO":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão inválida.",
+        )
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if usuario.last_activity_at is None:
+        usuario.last_activity_at = now
+        db.commit()
+        return usuario
+
+    if now - usuario.last_activity_at > INACTIVITY_TIMEOUT:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão expirada por inatividade.",
+        )
+
+    usuario.last_activity_at = now
+    db.commit()
+    return usuario
+
+
+def logout_user(db: Session, email: str) -> None:
+    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
+    if usuario is not None:
+        usuario.last_activity_at = None
+        db.commit()
 
 
 def issue_two_factor_code(db: Session, usuario: Usuario) -> None:

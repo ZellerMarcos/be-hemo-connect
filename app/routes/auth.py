@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,7 +11,14 @@ from app.schemas.auth import (
     TwoFactorVerifyRequest,
     TwoFactorVerifyResponse,
 )
-from app.services.auth import authenticate_user, issue_two_factor_code, verify_two_factor_code
+from app.services.auth import (
+    authenticate_user,
+    issue_two_factor_code,
+    logout_user,
+    update_last_activity,
+    validate_active_session,
+    verify_two_factor_code,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
@@ -36,4 +45,31 @@ def verify_two_factor(data: TwoFactorVerifyRequest, db: Session = Depends(get_db
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Código de verificação inválido.",
         )
+    update_last_activity(db, str(data.email))
     return TwoFactorVerifyResponse(authenticated=True)
+
+
+@router.post("/logout")
+def logout(
+    email: Annotated[str | None, Header(alias="x-user-email", convert_underscores=True)] = None,
+    db: Session = Depends(get_db),
+):
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão inválida.",
+        )
+    logout_user(db, email)
+    return {"logged_out": True}
+
+
+def require_active_session(
+    email: Annotated[str | None, Header(alias="x-user-email", convert_underscores=True)] = None,
+    db: Session = Depends(get_db),
+):
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sessão inválida.",
+        )
+    return validate_active_session(db, email)

@@ -186,6 +186,40 @@ def test_inactive_user_cannot_request_code():
     assert response.status_code == 401
 
 
+def test_user_session_expires_after_45_minutes_of_inactivity():
+    create_user()
+    sent_codes: list[str] = []
+
+    with patch(
+        "app.services.auth.send_two_factor_code",
+        side_effect=lambda recipient, code: sent_codes.append(code),
+    ):
+        client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
+
+    response = client.post(
+        "/auth/2fa/verify",
+        json={"email": "joao@example.com", "code": sent_codes[0]},
+    )
+    assert response.status_code == 200
+
+    with Session(engine) as session:
+        usuario = session.scalar(select(Usuario).where(Usuario.email == "joao@example.com"))
+        assert usuario is not None
+        usuario.last_activity_at = datetime.utcnow() - timedelta(minutes=46)
+        session.commit()
+
+    response = client.get(
+        "/usuarios",
+        headers={"x-user-email": "joao@example.com"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Sessão expirada por inatividade."
+
+
 def test_code_is_not_exposed_in_api_response_or_logs(caplog):
     create_user()
     with patch("app.services.auth.send_two_factor_code") as send_email:
