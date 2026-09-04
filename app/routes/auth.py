@@ -1,20 +1,29 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.usuario import Usuario
 from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     LoginTwoFactorRequired,
+    PasswordResetRequest,
+    PasswordResetResponse,
+    PasswordResetTokenRequest,
+    PasswordResetTokenResponse,
     TwoFactorVerifyRequest,
     TwoFactorVerifyResponse,
 )
 from app.services.auth import (
     authenticate_user,
+    get_login_error_detail,
     issue_two_factor_code,
     logout_user,
+    request_password_reset,
+    reset_password,
     update_last_activity,
     validate_active_session,
     verify_two_factor_code,
@@ -29,9 +38,10 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     # Fluxo de login: primeiro valida credenciais e, se corretas, dispara o segundo fator.
     usuario = authenticate_user(db, data.email, data.senha)
     if usuario is None:
+        # O backend informa ao cliente quantas tentativas ainda restam antes do bloqueio de 1 hora.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="E-mail ou senha inválidos.",
+            detail=get_login_error_detail(db, str(data.email)),
         )
     # A senha correta inicia o segundo fator, mas ainda não conclui o login.
     issue_two_factor_code(db, usuario)
@@ -41,6 +51,7 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 @router.post("/2fa/verify", response_model=TwoFactorVerifyResponse)
 def verify_two_factor(data: TwoFactorVerifyRequest, db: Session = Depends(get_db)):
     # Verifica o código de 2FA; caso esteja válido, a sessão passa a contar atividade para o timeout.
+    usuario = db.scalar(select(Usuario).where(Usuario.email == str(data.email)))
     if not verify_two_factor_code(db, str(data.email), data.code):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,7 +59,19 @@ def verify_two_factor(data: TwoFactorVerifyRequest, db: Session = Depends(get_db
         )
     # Em autenticação bem-sucedida, registra a atividade atual para renovar a sessão do backend.
     update_last_activity(db, str(data.email))
-    return TwoFactorVerifyResponse(authenticated=True)
+    return TwoFactorVerifyResponse(authenticated=True, nome=usuario.nome if usuario is not None else "Usuário")
+
+
+@router.post("/forgot-password", response_model=PasswordResetResponse)
+def forgot_password(data: PasswordResetRequest, db: Session = Depends(get_db)):
+    request_password_reset(db, str(data.email))
+    return PasswordResetResponse(sent=True)
+
+
+@router.post("/reset-password", response_model=PasswordResetTokenResponse)
+def reset_password_route(data: PasswordResetTokenRequest, db: Session = Depends(get_db)):
+    reset_password(db, data.token, data.senha)
+    return PasswordResetTokenResponse(reset=True)
 
 
 @router.post("/logout")

@@ -1,5 +1,8 @@
+import os
 from datetime import datetime, timedelta
 from unittest.mock import patch
+
+os.environ.setdefault("APP_ENV", "test")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -109,7 +112,7 @@ def test_valid_code_is_accepted_once():
         json={"email": "joao@example.com", "code": sent_codes[0]},
     )
 
-    assert response.json() == {"authenticated": True}
+    assert response.json() == {"authenticated": True, "nome": "Joao Silva"}
     assert repeated.status_code == 401
 
 
@@ -172,7 +175,7 @@ def test_new_code_invalidates_previous_code():
     )
 
     assert previous.status_code == 401
-    assert current.json() == {"authenticated": True}
+    assert current.json() == {"authenticated": True, "nome": "Joao Silva"}
 
 
 def test_inactive_user_cannot_request_code():
@@ -184,6 +187,65 @@ def test_inactive_user_cannot_request_code():
     )
 
     assert response.status_code == 401
+
+
+def test_user_can_request_password_reset_link():
+    create_user()
+    sent_links: list[str] = []
+
+    def capture_reset_link(recipient: str, reset_url: str) -> None:
+        sent_links.append(reset_url)
+
+    with patch("app.services.auth.send_password_reset_link", side_effect=capture_reset_link):
+        response = client.post(
+            "/auth/forgot-password",
+            json={"email": "joao@example.com"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"sent": True}
+    assert len(sent_links) == 1
+    assert "token=" in sent_links[0]
+
+
+def test_password_reset_token_updates_password():
+    create_user()
+    sent_links: list[str] = []
+
+    with patch(
+        "app.services.auth.send_password_reset_link",
+        side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
+    ):
+        client.post(
+            "/auth/forgot-password",
+            json={"email": "joao@example.com"},
+        )
+
+    token = sent_links[0].split("token=")[-1]
+    response = client.post(
+        "/auth/reset-password",
+        json={"token": token, "senha": "NovaSenha123!"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"reset": True}
+
+    login_response = client.post(
+        "/auth/login",
+        json={"email": "joao@example.com", "senha": "NovaSenha123!"},
+    )
+    assert login_response.status_code == 200
+    assert login_response.json() == {"requires_2fa": True}
+
+
+def test_invalid_password_reset_token_is_rejected():
+    response = client.post(
+        "/auth/reset-password",
+        json={"token": "invalid-token", "senha": "NovaSenha123!"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Token de redefinição inválido ou expirado."
 
 
 def test_user_session_expires_after_45_minutes_of_inactivity():
@@ -218,6 +280,25 @@ def test_user_session_expires_after_45_minutes_of_inactivity():
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Sessão expirada por inatividade."
+
+
+def test_user_is_blocked_after_five_failed_logins_in_15_minutes():
+    create_user()
+
+    for _ in range(5):
+        response = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaInvalida123!"},
+        )
+        assert response.status_code == 401
+
+    response = client.post(
+        "/auth/login",
+        json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Conta temporariamente bloqueada. Tente novamente em 1 hora."
 
 
 def test_code_is_not_exposed_in_api_response_or_logs(caplog):
