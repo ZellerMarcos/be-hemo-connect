@@ -1,17 +1,22 @@
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.password_reset_token import PasswordResetToken
 from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
+from app.security.password import hash_password, verify_password
 from app.security.two_factor import generate_code, hash_code, verify_code
-from app.security.password import verify_password
-from app.services.email import send_two_factor_code
+from app.services.email import send_password_reset_link, send_two_factor_code
 
 
 CODE_VALIDITY = timedelta(minutes=5)
+RESET_TOKEN_VALIDITY = timedelta(minutes=15)
 # A sessão do usuário considera o tempo sem atividade: 45 minutos sem requisição válida encerra a sessão.
 INACTIVITY_TIMEOUT = timedelta(minutes=45)
 # A proteção contra brute force considera até 5 erros em 15 minutos antes de bloquear a conta por 1 hora.
@@ -191,5 +196,86 @@ def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
 
     # Marcar o registro como usado impede a reutilização do mesmo código.
     two_factor_code.used_at = now
+    db.commit()
+    return True
+
+
+def generate_password_reset_token() -> str:
+    # O token bruto é gerado com alto nível de aleatoriedade para reduzir predição.
+    return secrets.token_urlsafe(32)
+
+
+def hash_reset_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def verify_reset_token(token: str, token_hash: str) -> bool:
+    return hmac.compare_digest(hash_reset_token(token), token_hash)
+
+
+def request_password_reset(db: Session, email: str) -> bool:
+    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
+    if usuario is None or usuario.status != "ATIVO":
+        return False
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    pending_tokens = db.scalars(
+        select(PasswordResetToken).where(
+            PasswordResetToken.usuario_id == usuario.id,
+            PasswordResetToken.used_at.is_(None),
+        )
+    ).all()
+    for token in pending_tokens:
+        token.used_at = now
+
+    token = generate_password_reset_token()
+    reset_token = PasswordResetToken(
+        usuario_id=usuario.id,
+        token_hash=hash_reset_token(token),
+        expires_at=now + RESET_TOKEN_VALIDITY,
+        created_at=now,
+    )
+    db.add(reset_token)
+    db.commit()
+    reset_url = f"http://localhost:5173/redefinir-senha?token={token}"
+    try:
+        send_password_reset_link(str(usuario.email), reset_url)
+    except Exception:
+        db.delete(reset_token)
+        db.commit()
+        raise
+    return True
+
+
+def reset_password(db: Session, token: str, new_password: str) -> bool:
+    db_token = db.scalar(
+        select(PasswordResetToken)
+        .where(
+            PasswordResetToken.used_at.is_(None),
+        )
+        .order_by(PasswordResetToken.created_at.desc())
+    )
+    if db_token is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de redefinição inválido ou expirado.",
+        )
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if db_token.expires_at <= now or not verify_reset_token(token, db_token.token_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de redefinição inválido ou expirado.",
+        )
+
+    usuario = db.get(Usuario, db_token.usuario_id)
+    if usuario is None or usuario.status != "ATIVO":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de redefinição inválido ou expirado.",
+        )
+
+    usuario.senha_hash = hash_password(new_password)
+    db_token.used_at = now
     db.commit()
     return True

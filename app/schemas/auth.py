@@ -30,3 +30,21 @@ class TwoFactorVerifyRequest(BaseModel):
 
 class TwoFactorVerifyResponse(BaseModel):
     authenticated: bool
+    nome: str
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetResponse(BaseModel):
+    sent: bool = True
+
+
+class PasswordResetTokenRequest(BaseModel):
+    token: str
+    senha: str = Field(min_length=8)
+
+
+class PasswordResetTokenResponse(BaseModel):
+    reset: bool = True
