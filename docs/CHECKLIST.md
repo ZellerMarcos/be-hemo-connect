@@ -37,7 +37,10 @@ Este checklist organiza os requisitos de segurança implementados no backend do 
 | 2.9 — Atualização segura da senha | Nova senha armazenada com hash Argon2id | Concluído |
 | 2.10 — Envio do link | Link temporário encaminhado pelo serviço de e-mail | Concluído |
 | 2.11 — Privacidade da solicitação | Resposta neutra não revela se o e-mail está cadastrado | Concluído |
-| 2.12 — Justificativas técnicas | Regras de recuperação descritas na release do requisito 2 | Concluído |
+| 2.12 — Registro da solicitação | Log `Usuário solicitou uma redefinição de senha` com status da solicitação | Concluído |
+| 2.13 — Registro do envio | Log `Token enviado` com status do envio do link | Concluído |
+| 2.14 — Registro do resultado | Logs `Reset bem sucedido` ou `Reset de senha ou pedido mal sucedido`, sem expor token ou senha | Concluído |
+| 2.15 — Justificativas técnicas | Regras de recuperação descritas na release do requisito 2 | Concluído |
 
 ---
 

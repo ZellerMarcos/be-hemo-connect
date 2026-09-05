@@ -25,6 +25,10 @@ Nesta release, o foco principal foi implementar a recuperação segura de acesso
 - Envio do link de redefinição por e-mail.
 - Atualização da senha utilizando hash Argon2id.
 - Mensagens de erro para token inválido ou expirado.
+- Registro descritivo da solicitação com `status=solicitada` ou `status=falha`.
+- Registro `Token enviado | status=sucesso` após o envio do link.
+- Registro `Reset bem sucedido | status=sucesso` após a troca da senha.
+- Registro `Reset de senha ou pedido mal sucedido | status=falha` em falhas de validação ou consumo.
 
 ---
 
@@ -59,6 +63,12 @@ Nesta release, o foco principal foi implementar a recuperação segura de acesso
 - O token é consumido após uma redefinição concluída.
 - A senha original nunca é registrada em texto puro.
 - Falhas de envio de e-mail não deixam uma solicitação válida abandonada no banco.
+
+### 4. Auditoria da operação
+- Solicitações de recuperação são registradas com o e-mail informado e o resultado da operação.
+- Redefinições concluídas são registradas com o e-mail do usuário afetado.
+- Tokens, senhas e conteúdo sensível não são gravados nos logs.
+- Falhas de token inválido, expirado, já utilizado ou usuário inativo geram registro de advertência.
 
 ---
 
@@ -172,6 +182,7 @@ Resposta:
 - Invalidação de tokens pendentes anteriores.
 - Validação de validade e uso único.
 - Redefinição da senha com hash Argon2id.
+- Registro de logs de solicitação, sucesso e falha do processo.
 - Tratamento de usuários inexistentes, inativos, tokens inválidos e tokens expirados.
 - Documentação dos endpoints e das regras de negócio.
 
