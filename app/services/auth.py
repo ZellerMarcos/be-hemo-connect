@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -15,6 +16,7 @@ from app.security.two_factor import generate_code, hash_code, verify_code
 from app.services.email import send_password_reset_link, send_two_factor_code
 
 
+logger = logging.getLogger(__name__)
 CODE_VALIDITY = timedelta(minutes=5)
 RESET_TOKEN_VALIDITY = timedelta(minutes=15)
 # A sessão do usuário considera o tempo sem atividade: 45 minutos sem requisição válida encerra a sessão.
@@ -216,6 +218,7 @@ def verify_reset_token(token: str, token_hash: str) -> bool:
 def request_password_reset(db: Session, email: str) -> bool:
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
+        logger.info("Solicitacao de recuperacao de senha rejeitada para email=%s", email)
         return False
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -244,16 +247,18 @@ def request_password_reset(db: Session, email: str) -> bool:
         db.delete(reset_token)
         db.commit()
         raise
+    logger.info("Solicitacao de recuperacao de senha registrada para email=%s", email)
     return True
 
 
 def reset_password(db: Session, token: str, new_password: str) -> bool:
+    token_hash = hash_reset_token(token)
     db_token = db.scalar(
         select(PasswordResetToken)
         .where(
             PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.token_hash == token_hash,
         )
-        .order_by(PasswordResetToken.created_at.desc())
     )
     if db_token is None:
         raise HTTPException(
@@ -262,7 +267,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
         )
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    if db_token.expires_at <= now or not verify_reset_token(token, db_token.token_hash):
+    if db_token.expires_at <= now:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",

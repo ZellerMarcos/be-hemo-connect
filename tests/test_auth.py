@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from app.database import get_db
 from app.main import app
 from app.models.hemocentro import Base
+from app.models.password_reset_token import PasswordResetToken
 from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
 from app.security.two_factor import hash_code
@@ -31,6 +32,7 @@ Base.metadata.create_all(engine)
 def clean_database():
     with Session(engine) as session:
         session.execute(Base.metadata.tables["two_factor_codes"].delete())
+        session.execute(Base.metadata.tables["password_reset_tokens"].delete())
         session.execute(Base.metadata.tables["usuarios"].delete())
         session.commit()
 
@@ -246,6 +248,71 @@ def test_invalid_password_reset_token_is_rejected():
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Token de redefinição inválido ou expirado."
+
+
+def test_expired_password_reset_token_is_rejected():
+    create_user()
+    sent_links: list[str] = []
+
+    with patch(
+        "app.services.auth.send_password_reset_link",
+        side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
+    ):
+        client.post("/auth/forgot-password", json={"email": "joao@example.com"})
+
+    with Session(engine) as session:
+        stored = session.scalar(select(PasswordResetToken))
+        assert stored is not None
+        stored.expires_at = datetime.utcnow() - timedelta(seconds=1)
+        session.commit()
+
+    response = client.post(
+        "/auth/reset-password",
+        json={"token": sent_links[0].split("token=")[-1], "senha": "NovaSenha123!"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Token de redefinição inválido ou expirado."
+
+
+def test_password_reset_token_cannot_be_reused():
+    create_user()
+    sent_links: list[str] = []
+
+    with patch(
+        "app.services.auth.send_password_reset_link",
+        side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
+    ):
+        client.post("/auth/forgot-password", json={"email": "joao@example.com"})
+
+    token = sent_links[0].split("token=")[-1]
+    first_response = client.post(
+        "/auth/reset-password",
+        json={"token": token, "senha": "NovaSenha123!"},
+    )
+    second_response = client.post(
+        "/auth/reset-password",
+        json={"token": token, "senha": "OutraSenha123!"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 400
+
+
+def test_password_reset_request_is_registered_in_log(caplog):
+    create_user()
+
+    with caplog.at_level("INFO", logger="app.services.auth"), patch(
+        "app.services.auth.send_password_reset_link"
+    ):
+        response = client.post(
+            "/auth/forgot-password",
+            json={"email": "joao@example.com"},
+        )
+
+    assert response.status_code == 200
+    assert "Solicitacao de recuperacao de senha registrada" in caplog.text
+    assert "joao@example.com" in caplog.text
 
 
 def test_user_session_expires_after_45_minutes_of_inactivity():
