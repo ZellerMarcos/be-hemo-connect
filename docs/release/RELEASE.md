@@ -104,7 +104,6 @@ Nesta release, o foco principal foi consolidar o fluxo de acesso do usuário, o 
   - pages/
   - services/
   - types/
-  - index.css
 
 ---
 
@@ -129,4 +128,3 @@ Nesta release, o foco principal foi consolidar o fluxo de acesso do usuário, o 
 - O frontend foi validado com build do projeto, confirmando que as alterações foram compiladas corretamente.
 
 ---
-
