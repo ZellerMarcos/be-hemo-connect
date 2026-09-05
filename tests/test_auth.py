@@ -46,11 +46,15 @@ app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
-def user_payload(status: str = "ATIVO") -> dict[str, object]:
+def user_payload(
+    status: str = "ATIVO",
+    email: str = "joao@example.com",
+    cpf: str = "12345678901",
+) -> dict[str, object]:
     return {
         "nome": "Joao Silva",
-        "cpf": "12345678901",
-        "email": "joao@example.com",
+        "cpf": cpf,
+        "email": email,
         "senha": "SenhaSegura123!",
         "perfil": "DOADOR",
         "status": status,
@@ -298,6 +302,40 @@ def test_password_reset_token_cannot_be_reused():
     assert first_response.status_code == 200
     assert second_response.status_code == 400
 
+    with Session(engine) as session:
+        stored = session.scalar(select(PasswordResetToken))
+        assert stored is not None
+        # O status persistido confirma que o link foi invalidado após o primeiro reset.
+        assert stored.used_at is not None
+
+
+def test_password_reset_invalidates_only_the_token_of_the_current_user():
+    create_user()
+    second_user = user_payload(email="maria@example.com", cpf="98765432109")
+    assert client.post("/usuarios", json=second_user).status_code == 201
+    sent_links: list[str] = []
+
+    with patch(
+        "app.services.auth.send_password_reset_link",
+        side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
+    ):
+        client.post("/auth/forgot-password", json={"email": "joao@example.com"})
+        client.post("/auth/forgot-password", json={"email": "maria@example.com"})
+
+    joao_token = sent_links[0].split("token=")[-1]
+    maria_token = sent_links[1].split("token=")[-1]
+    joao_reset = client.post(
+        "/auth/reset-password",
+        json={"token": joao_token, "senha": "NovaSenha123!"},
+    )
+    maria_reset = client.post(
+        "/auth/reset-password",
+        json={"token": maria_token, "senha": "OutraSenha123!"},
+    )
+
+    assert joao_reset.json() == {"reset": True}
+    assert maria_reset.json() == {"reset": True}
+
 
 def test_password_reset_request_is_registered_in_log(caplog):
     create_user()
@@ -311,8 +349,48 @@ def test_password_reset_request_is_registered_in_log(caplog):
         )
 
     assert response.status_code == 200
-    assert "Solicitacao de recuperacao de senha registrada" in caplog.text
+    assert "Usuário solicitou uma redefinição de senha" in caplog.text
+    assert "status=solicitada" in caplog.text
+    assert "Token enviado | status=sucesso" in caplog.text
     assert "joao@example.com" in caplog.text
+
+
+def test_password_reset_success_is_registered_in_log(caplog):
+    create_user()
+    sent_links: list[str] = []
+
+    with patch(
+        "app.services.auth.send_password_reset_link",
+        side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
+    ):
+        client.post("/auth/forgot-password", json={"email": "joao@example.com"})
+
+    token = sent_links[0].split("token=")[-1]
+    with caplog.at_level("INFO", logger="app.services.auth"):
+        response = client.post(
+            "/auth/reset-password",
+            json={"token": token, "senha": "NovaSenha123!"},
+        )
+
+    assert response.status_code == 200
+    assert "Reset bem sucedido | status=sucesso" in caplog.text
+    assert "joao@example.com" in caplog.text
+    assert token not in caplog.text
+    assert "NovaSenha123!" not in caplog.text
+
+
+def test_password_reset_failure_is_registered_in_log(caplog):
+    with caplog.at_level("WARNING", logger="app.services.auth"):
+        response = client.post(
+            "/auth/reset-password",
+            json={"token": "invalid-token", "senha": "NovaSenha123!"},
+        )
+
+    assert response.status_code == 400
+    assert "Reset de senha ou pedido mal sucedido" in caplog.text
+    assert "status=falha" in caplog.text
+    assert "token inválido ou expirado" in caplog.text
+    assert "NovaSenha123!" not in caplog.text
 
 
 def test_user_session_expires_after_45_minutes_of_inactivity():

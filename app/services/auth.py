@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models.password_reset_token import PasswordResetToken
@@ -218,7 +218,10 @@ def verify_reset_token(token: str, token_hash: str) -> bool:
 def request_password_reset(db: Session, email: str) -> bool:
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
-        logger.info("Solicitacao de recuperacao de senha rejeitada para email=%s", email)
+        logger.warning(
+            "Usuário solicitou uma redefinição de senha | status=falha | email=%s",
+            email,
+        )
         return False
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -240,14 +243,26 @@ def request_password_reset(db: Session, email: str) -> bool:
     )
     db.add(reset_token)
     db.commit()
-    reset_url = f"http://localhost:5173/redefinir-senha?token={token}"
+    # Registra a criação da solicitação antes de iniciar o envio do link por e-mail.
+    logger.info(
+        "Usuário solicitou uma redefinição de senha | status=solicitada | email=%s",
+        email,
+    )
+    # O caminho precisa corresponder à rota que o frontend reconhece para exibir a tela de nova senha.
+    reset_url = f"http://localhost:5173/reset-password?token={token}"
     try:
         send_password_reset_link(str(usuario.email), reset_url)
     except Exception:
+        # Registra a falha operacional sem expor o token ou detalhes sensíveis do provedor de e-mail.
+        logger.warning(
+            "Token de redefinição não enviado | status=falha | email=%s",
+            email,
+        )
         db.delete(reset_token)
         db.commit()
         raise
-    logger.info("Solicitacao de recuperacao de senha registrada para email=%s", email)
+    # Confirma que o link foi entregue ao serviço de envio sem registrar o token em si.
+    logger.info("Token enviado | status=sucesso | email=%s", email)
     return True
 
 
@@ -261,6 +276,10 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
         )
     )
     if db_token is None:
+        # Tokens ausentes, utilizados ou pertencentes a outro valor são registrados sem revelar o conteúdo recebido.
+        logger.warning(
+            "Reset de senha ou pedido mal sucedido | status=falha | motivo=token inválido ou expirado"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",
@@ -268,6 +287,9 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     if db_token.expires_at <= now:
+        logger.warning(
+            "Reset de senha ou pedido mal sucedido | status=falha | motivo=token inválido ou expirado"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",
@@ -275,12 +297,38 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
 
     usuario = db.get(Usuario, db_token.usuario_id)
     if usuario is None or usuario.status != "ATIVO":
+        logger.warning(
+            "Reset de senha ou pedido mal sucedido | status=falha | motivo=usuário inválido ou inativo"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",
         )
 
+    # Consome o token de forma atômica para que duas requisições simultâneas não usem o mesmo link.
+    token_update = db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.id == db_token.id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+        .values(used_at=now)
+    )
+    if token_update.rowcount != 1:
+        db.rollback()
+        logger.warning(
+            "Reset de senha ou pedido mal sucedido | status=falha | motivo=token já utilizado ou expirado | email=%s",
+            usuario.email,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token de redefinição inválido ou expirado.",
+        )
+
+    # A senha só é alterada depois que esta requisição assume o uso exclusivo do token.
     usuario.senha_hash = hash_password(new_password)
-    db_token.used_at = now
     db.commit()
+    # O evento de sucesso permite auditar a operação sem registrar a nova senha ou o token.
+    logger.info("Reset bem sucedido | status=sucesso | email=%s", usuario.email)
     return True
