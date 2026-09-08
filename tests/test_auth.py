@@ -202,7 +202,7 @@ def test_user_can_request_password_reset_link():
     def capture_reset_link(recipient: str, reset_url: str) -> None:
         sent_links.append(reset_url)
 
-    with patch("app.services.auth.send_password_reset_link", side_effect=capture_reset_link):
+    with patch("app.services.auth.send_password_reset_email", side_effect=capture_reset_link):
         response = client.post(
             "/auth/forgot-password",
             json={"email": "joao@example.com"},
@@ -219,7 +219,7 @@ def test_password_reset_token_updates_password():
     sent_links: list[str] = []
 
     with patch(
-        "app.services.auth.send_password_reset_link",
+        "app.services.auth.send_password_reset_email",
         side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
     ):
         client.post(
@@ -236,10 +236,11 @@ def test_password_reset_token_updates_password():
     assert response.status_code == 200
     assert response.json() == {"reset": True}
 
-    login_response = client.post(
-        "/auth/login",
-        json={"email": "joao@example.com", "senha": "NovaSenha123!"},
-    )
+    with patch("app.services.auth.send_two_factor_code"):
+        login_response = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "NovaSenha123!"},
+        )
     assert login_response.status_code == 200
     assert login_response.json() == {"requires_2fa": True}
 
@@ -259,7 +260,7 @@ def test_expired_password_reset_token_is_rejected():
     sent_links: list[str] = []
 
     with patch(
-        "app.services.auth.send_password_reset_link",
+        "app.services.auth.send_password_reset_email",
         side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
     ):
         client.post("/auth/forgot-password", json={"email": "joao@example.com"})
@@ -284,7 +285,7 @@ def test_password_reset_token_cannot_be_reused():
     sent_links: list[str] = []
 
     with patch(
-        "app.services.auth.send_password_reset_link",
+        "app.services.auth.send_password_reset_email",
         side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
     ):
         client.post("/auth/forgot-password", json={"email": "joao@example.com"})
@@ -316,7 +317,7 @@ def test_password_reset_invalidates_only_the_token_of_the_current_user():
     sent_links: list[str] = []
 
     with patch(
-        "app.services.auth.send_password_reset_link",
+        "app.services.auth.send_password_reset_email",
         side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
     ):
         client.post("/auth/forgot-password", json={"email": "joao@example.com"})
@@ -341,7 +342,7 @@ def test_password_reset_request_is_registered_in_log(caplog):
     create_user()
 
     with caplog.at_level("INFO", logger="app.services.auth"), patch(
-        "app.services.auth.send_password_reset_link"
+        "app.services.auth.send_password_reset_email"
     ):
         response = client.post(
             "/auth/forgot-password",
@@ -360,7 +361,7 @@ def test_password_reset_success_is_registered_in_log(caplog):
     sent_links: list[str] = []
 
     with patch(
-        "app.services.auth.send_password_reset_link",
+        "app.services.auth.send_password_reset_email",
         side_effect=lambda recipient, reset_url: sent_links.append(reset_url),
     ):
         client.post("/auth/forgot-password", json={"email": "joao@example.com"})

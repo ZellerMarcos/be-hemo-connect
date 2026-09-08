@@ -13,7 +13,7 @@ from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
 from app.security.password import hash_password, verify_password
 from app.security.two_factor import generate_code, hash_code, verify_code
-from app.services.email import send_password_reset_link, send_two_factor_code
+from app.services.email import send_password_reset_email, send_two_factor_code
 
 
 logger = logging.getLogger(__name__)
@@ -172,6 +172,7 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
         db.delete(two_factor_code)
         db.commit()
         raise
+    logger.info("Token 2FA enviado | status=sucesso | email=%s", usuario.email)
 
 
 def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
@@ -251,7 +252,7 @@ def request_password_reset(db: Session, email: str) -> bool:
     # O caminho precisa corresponder à rota que o frontend reconhece para exibir a tela de nova senha.
     reset_url = f"http://localhost:5173/reset-password?token={token}"
     try:
-        send_password_reset_link(str(usuario.email), reset_url)
+        send_password_reset_email(str(usuario.email), reset_url)
     except Exception:
         # Registra a falha operacional sem expor o token ou detalhes sensíveis do provedor de e-mail.
         logger.warning(

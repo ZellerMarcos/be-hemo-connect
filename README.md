@@ -116,9 +116,26 @@ Fluxo:
 O endpoint `POST /auth/login` retorna `{"requires_2fa": true}` quando o código
 foi gerado e enviado. O endpoint `POST /auth/2fa/verify` recebe `email` e
 `code`, retornando `{"authenticated": true}` somente para um código válido.
-O código não aparece em respostas ou logs, e o envio depende das variáveis
-`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD` e `SMTP_FROM` do
-ambiente. Esta etapa não cria sessão, JWT, logout ou autorização.
+O código não aparece em respostas ou logs, e o envio usa a API HTTPS do Resend
+por meio das variáveis `RESEND_API_KEY` e `MAIL_FROM`. Esta etapa não cria
+sessão, JWT, logout ou autorização.
+
+## Envio de e-mails
+
+O Hemo Connect utiliza o Resend como provedor de e-mail através do SDK oficial
+Python `resend`. O envio ocorre por HTTPS, sem SMTP, porque o Render Free não
+permite tráfego SMTP de saída nas portas 25, 465 e 587.
+
+Configure localmente ou no serviço do Render:
+
+```env
+RESEND_API_KEY=re_xxxxxxxxx
+MAIL_FROM=Hemo Connect <onboarding@resend.dev>
+```
+
+No Render, configure essas variáveis no painel do serviço. O arquivo `.env`
+local não é utilizado pelo ambiente de produção. Para usar um remetente próprio,
+o domínio precisa estar verificado e autorizado no Resend.
 
 ## Testes
 
