@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import logging
+import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -249,8 +250,9 @@ def request_password_reset(db: Session, email: str) -> bool:
         "Usuário solicitou uma redefinição de senha | status=solicitada | email=%s",
         email,
     )
-    # O caminho precisa corresponder à rota que o frontend reconhece para exibir a tela de nova senha.
-    reset_url = f"http://localhost:5173/reset-password?token={token}"
+    # Usa a origem do frontend configurada no ambiente e mantém localhost para desenvolvimento.
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    reset_url = f"{frontend_url}/reset-password?token={token}"
     try:
         send_password_reset_email(str(usuario.email), reset_url)
     except Exception:
