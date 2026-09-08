@@ -77,9 +77,9 @@ Os campos obrigatorios sao `nome`, `endereco`, `telefone` e `status`. O campo
 ### Fluxo da senha
 
 O POST recebe `senha`, aplica Argon2id e armazena somente o resultado em
-`senha_hash` no SQL Server:
+`senha_hash` no PostgreSQL do Supabase:
 
-`senha` -> `Argon2id` -> `hash` -> `SQL Server`
+`senha` -> `Argon2id` -> `hash` -> `PostgreSQL/Supabase`
 
 A senha original nunca e armazenada ou retornada pela API. O salt e gerado
 automaticamente pela biblioteca, de forma criptograficamente segura e unica em
@@ -104,7 +104,7 @@ O retorno contem somente dados basicos do usuario; nunca inclui `senha` ou
 O segundo fator usa um codigo aleatorio de seis digitos enviado ao e-mail
 cadastrado depois que o e-mail e a senha sao validados com Argon2id. O codigo
 vale por cinco minutos, e apenas o hash dele e armazenado na tabela
-`dbo.two_factor_codes`. Depois de validado, o codigo e marcado como utilizado e
+`public.two_factor_codes`. Depois de validado, o codigo e marcado como utilizado e
 nao pode ser reutilizado. Um novo login invalida o codigo pendente anterior.
 
 Fluxo:
