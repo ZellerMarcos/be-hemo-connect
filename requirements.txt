@@ -2,7 +2,7 @@ fastapi
 uvicorn
 pydantic
 sqlalchemy
-pyodbc
+psycopg[binary]
 pytest
 httpx
 python-dotenv
