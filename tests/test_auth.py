@@ -195,8 +195,9 @@ def test_inactive_user_cannot_request_code():
     assert response.status_code == 401
 
 
-def test_user_can_request_password_reset_link():
+def test_user_can_request_password_reset_link(monkeypatch):
     create_user()
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:5173")
     sent_links: list[str] = []
 
     def capture_reset_link(recipient: str, reset_url: str) -> None:
@@ -211,7 +212,7 @@ def test_user_can_request_password_reset_link():
     assert response.status_code == 200
     assert response.json() == {"sent": True}
     assert len(sent_links) == 1
-    assert "token=" in sent_links[0]
+    assert sent_links[0].startswith("http://localhost:5173/reset-password?token=")
 
 
 def test_password_reset_token_updates_password():
