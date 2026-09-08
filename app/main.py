@@ -26,10 +26,11 @@ app = FastAPI(
 )
 
 frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+cors_origins = list(dict.fromkeys([frontend_url, "http://localhost:5173"]))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_url],
+    allow_origins=cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-User-Email"],
