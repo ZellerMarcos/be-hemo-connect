@@ -137,6 +137,22 @@ No Render, configure essas variáveis no painel do serviço. O arquivo `.env`
 local não é utilizado pelo ambiente de produção. Para usar um remetente próprio,
 o domínio precisa estar verificado e autorizado no Resend.
 
+## Comunicacao segura e criptografia
+
+O requisito 3 foi consolidado com foco em transporte seguro e protecao de
+credenciais:
+
+- conexao com Supabase exige TLS por `sslmode=require`;
+- envio de e-mail usa API HTTPS do Resend;
+- middleware HTTP aplica cabecalhos de seguranca e, em producao
+	(`APP_ENV=production`), redireciona requisicoes inseguras para HTTPS;
+- senhas usam Argon2id e tokens temporarios usam hash SHA-256.
+
+Consulte:
+
+- `docs/SECURITY.md`
+- `docs/releases/criptografia (requisito 3)/RELEASE_requisito_03.md`
+
 ## Testes
 
 O teste atual verifica o endpoint de saude por HTTP. Como ele acessa o servidor
