@@ -67,15 +67,16 @@ def payload(**overrides: object) -> dict[str, object]:
     return data
 
 
-def create_user() -> None:
+def create_user() -> dict[str, object]:
     response = client.post("/usuarios", json=payload())
     assert response.status_code == 201
+    return response.json()
 
 
 @pytest.fixture()
-def authenticated_user() -> dict[str, str]:
+def authenticated_user() -> dict[str, object]:
     # Prepara um usuario autenticado para exercitar os endpoints de direitos do titular.
-    create_user()
+    created = create_user()
     with patch("app.services.auth.send_two_factor_code") as send_email:
         response = client.post(
             "/auth/login",
@@ -89,34 +90,43 @@ def authenticated_user() -> dict[str, str]:
         json={"email": "joao@example.com", "code": code},
     )
     assert verify.status_code == 200
-    return {"x-user-email": "joao@example.com"}
+    return {
+        "headers": {"x-user-email": "joao@example.com"},
+        "usuario_id": created["id"],
+    }
 
 
 def test_privacy_me_returns_titular_data(authenticated_user):
     # Consulta principal de dados do titular autenticado.
-    response = client.get("/privacy/me", headers=authenticated_user)
+    response = client.get("/privacy/me", headers=authenticated_user["headers"])
 
     assert response.status_code == 200
     body = response.json()
     assert body["email"] == "joao@example.com"
     assert len(body["consentimentos"]) == 3
+    assert "id" not in body
+    assert "status" not in body
+    assert "hemocentro_id" not in body
 
 
 def test_privacy_export_returns_structured_payload(authenticated_user):
     # Exportacao deve retornar dados e timestamp de emissao.
-    response = client.get("/privacy/export", headers=authenticated_user)
+    response = client.get("/privacy/export", headers=authenticated_user["headers"])
 
     assert response.status_code == 200
     body = response.json()
     assert body["titular"]["email"] == "joao@example.com"
     assert body["exportado_em"]
+    assert "id" not in body["titular"]
+    assert "status" not in body["titular"]
+    assert "hemocentro_id" not in body["titular"]
 
 
 def test_privacy_revoke_consent_updates_latest_consent(authenticated_user):
     # Revoga a finalidade informada e valida persistencia do estado revogado.
     response = client.post(
         "/privacy/consent/revoke",
-        headers=authenticated_user,
+        headers=authenticated_user["headers"],
         json={"finalidade": "seguranca"},
     )
 
@@ -126,7 +136,7 @@ def test_privacy_revoke_consent_updates_latest_consent(authenticated_user):
     with Session(engine) as session:
         consentimento = session.scalar(
             select(Consentimento).where(
-                Consentimento.usuario_id == 1,
+                Consentimento.usuario_id == authenticated_user["usuario_id"],
                 Consentimento.finalidade == "seguranca",
             )
         )
@@ -138,13 +148,13 @@ def test_privacy_revoke_consent_updates_latest_consent(authenticated_user):
 
 def test_privacy_delete_anonymizes_titular_data(authenticated_user):
     # Exclusao LGPD precisa anonimizar dados e desativar acesso da conta.
-    response = client.delete("/privacy/me", headers=authenticated_user)
+    response = client.delete("/privacy/me", headers=authenticated_user["headers"])
 
     assert response.status_code == 200
     assert response.json()["excluido"] is True
 
     with Session(engine) as session:
-        usuario = session.scalar(select(Usuario).where(Usuario.id == 1))
+        usuario = session.scalar(select(Usuario).where(Usuario.id == authenticated_user["usuario_id"]))
 
     assert usuario is not None
     assert usuario.status == "INATIVO"

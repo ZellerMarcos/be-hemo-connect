@@ -1,9 +1,12 @@
 import secrets
+import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import inspect, select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
+from app.database import DB_SCHEMA
 from app.models.consentimento import Consentimento
 from app.models.password_reset_token import PasswordResetToken
 from app.models.two_factor_code import TwoFactorCode
@@ -12,6 +15,16 @@ from app.security.password import hash_password
 
 
 BASE_LEGAL_PADRAO = "Execucao de contrato e seguranca da informacao"
+logger = logging.getLogger(__name__)
+
+
+def _missing_consent_table(error: ProgrammingError) -> bool:
+    message = str(error).lower()
+    return "consentimentos" in message and "does not exist" in message
+
+
+def _consent_table_exists(db: Session) -> bool:
+    return inspect(db.bind).has_table("consentimentos", schema=DB_SCHEMA)
 
 
 def registrar_consentimentos_iniciais(
@@ -40,28 +53,54 @@ def registrar_consentimentos_iniciais(
 
 def listar_consentimentos(db: Session, usuario_id: int) -> list[Consentimento]:
     # Retorna o historico do titular, priorizando finalidade e ordem temporal mais recente.
-    return list(
-        db.scalars(
-            select(Consentimento)
-            .where(Consentimento.usuario_id == usuario_id)
-            .order_by(Consentimento.finalidade.asc(), Consentimento.concedido_em.desc())
-        ).all()
-    )
+    if not _consent_table_exists(db):
+        logger.warning(
+            "Tabela consentimentos ausente ao listar consentimentos | usuario_id=%s",
+            usuario_id,
+        )
+        return []
+
+    try:
+        return list(
+            db.scalars(
+                select(Consentimento)
+                .where(Consentimento.usuario_id == usuario_id)
+                .order_by(Consentimento.finalidade.asc(), Consentimento.concedido_em.desc())
+            ).all()
+        )
+    except ProgrammingError as error:
+        if _missing_consent_table(error):
+            db.rollback()
+            logger.warning(
+                "Tabela consentimentos ausente ao listar consentimentos | usuario_id=%s",
+                usuario_id,
+            )
+            return []
+        raise
 
 
 def revogar_consentimento(db: Session, usuario_id: int, finalidade: str) -> Consentimento:
     # Marca o ultimo consentimento ativo como revogado sem remover o historico.
+    if not _consent_table_exists(db):
+        raise ValueError("Estrutura de consentimento indisponivel no banco de dados.")
+
     agora = datetime.now(timezone.utc).replace(tzinfo=None)
-    consentimento = db.scalar(
-        select(Consentimento)
-        .where(
-            Consentimento.usuario_id == usuario_id,
-            Consentimento.finalidade == finalidade,
-            Consentimento.concedido.is_(True),
-            Consentimento.revogado_em.is_(None),
+    try:
+        consentimento = db.scalar(
+            select(Consentimento)
+            .where(
+                Consentimento.usuario_id == usuario_id,
+                Consentimento.finalidade == finalidade,
+                Consentimento.concedido.is_(True),
+                Consentimento.revogado_em.is_(None),
+            )
+            .order_by(Consentimento.concedido_em.desc())
         )
-        .order_by(Consentimento.concedido_em.desc())
-    )
+    except ProgrammingError as error:
+        if _missing_consent_table(error):
+            db.rollback()
+            raise ValueError("Estrutura de consentimento indisponivel no banco de dados.") from error
+        raise
     if consentimento is None:
         raise ValueError("Consentimento ativo nao encontrado para a finalidade informada.")
 
@@ -89,6 +128,8 @@ def montar_dados_titular(db: Session, usuario: Usuario) -> dict[str, object]:
 
 def excluir_dados_titular(db: Session, usuario: Usuario) -> None:
     # Aplica anonimizaçao dos dados pessoais e invalida artefatos ativos de autenticacao.
+    usuario = db.merge(usuario)
+    consent_table_exists = _consent_table_exists(db)
     agora = datetime.now(timezone.utc).replace(tzinfo=None)
     suffix = f"{usuario.id}_{int(agora.timestamp())}"
 
@@ -120,15 +161,21 @@ def excluir_dados_titular(db: Session, usuario: Usuario) -> None:
     for token in tokens_ativos:
         token.used_at = agora
 
-    consentimentos_ativos = db.scalars(
-        select(Consentimento).where(
-            Consentimento.usuario_id == usuario.id,
-            Consentimento.concedido.is_(True),
-            Consentimento.revogado_em.is_(None),
+    if consent_table_exists:
+        consentimentos_ativos = db.scalars(
+            select(Consentimento).where(
+                Consentimento.usuario_id == usuario.id,
+                Consentimento.concedido.is_(True),
+                Consentimento.revogado_em.is_(None),
+            )
+        ).all()
+        for consentimento in consentimentos_ativos:
+            consentimento.concedido = False
+            consentimento.revogado_em = agora
+    else:
+        logger.warning(
+            "Tabela consentimentos ausente ao excluir dados do titular | usuario_id=%s",
+            usuario.id,
         )
-    ).all()
-    for consentimento in consentimentos_ativos:
-        consentimento.concedido = False
-        consentimento.revogado_em = agora
 
     db.commit()
