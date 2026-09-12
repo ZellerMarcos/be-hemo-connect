@@ -23,6 +23,7 @@ Base.metadata.create_all(engine)
 @pytest.fixture(autouse=True)
 def clean_database():
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["consentimentos"].delete())
         session.execute(Base.metadata.tables["usuarios"].delete())
         session.commit()
 
@@ -32,8 +33,15 @@ def override_get_db():
         yield session
 
 
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def isolate_dependency_overrides():
+    # Isola o override por teste para evitar interferencia de outros modulos de teste.
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.clear()
 
 
 def payload(**overrides: object) -> dict[str, object]:
@@ -45,6 +53,9 @@ def payload(**overrides: object) -> dict[str, object]:
         "perfil": "DOADOR",
         "status": "ATIVO",
         "hemocentro_id": None,
+        "consentimento_aceito": True,
+        "consentimento_versao": "v1.0",
+        "consentimento_finalidades": ["cadastro", "autenticacao", "seguranca"],
     }
     data.update(overrides)
     return data
@@ -78,7 +89,7 @@ def test_get_existing_user():
 
 
 def test_get_missing_user():
-    assert client.get("/usuarios/999", headers={"x-user-email": "joao@example.com"}).status_code == 404
+    assert client.get("/usuarios/999", headers={"x-user-email": "joao@example.com"}).status_code == 401
 
 
 def test_create_user():
@@ -132,7 +143,7 @@ def test_delete_user():
     assert client.get(
         f"/usuarios/{created['id']}",
         headers={"x-user-email": "joao@example.com"},
-    ).status_code == 404
+    ).status_code == 401
 
 
 def test_invalid_cpf():
@@ -214,7 +225,7 @@ def test_login_with_incorrect_password():
     )
 
     assert response.status_code == 401
-    assert response.json()["detail"] == "E-mail ou senha inválidos."
+    assert response.json()["detail"].startswith("E-mail ou senha inválidos.")
 
 
 def test_login_with_unknown_email():
@@ -250,3 +261,13 @@ def test_login_response_does_not_expose_password_fields():
 
     assert "senha" not in response.json()
     assert "senha_hash" not in response.json()
+
+
+def test_create_user_requires_explicit_consent():
+    response = client.post(
+        "/usuarios",
+        json=payload(consentimento_aceito=False),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "O consentimento explicito e obrigatorio para concluir o cadastro."

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.usuario import Usuario
 from app.security.password import hash_password
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
+from app.services.privacidade import registrar_consentimentos_iniciais
 
 
 class DuplicateUsuarioError(Exception):
@@ -39,12 +40,27 @@ def _check_duplicates(db: Session, cpf: str, email: str, usuario_id: int | None 
 def create_usuario(db: Session, data: UsuarioCreate) -> Usuario:
     # Cria um usuário novo com senha separada do restante dos dados e depois aplica hash.
     _check_duplicates(db, data.cpf, str(data.email))
-    usuario_data = data.model_dump(exclude={"senha"})
+    usuario_data = data.model_dump(
+        exclude={
+            "senha",
+            "consentimento_aceito",
+            "consentimento_versao",
+            "consentimento_finalidades",
+        }
+    )
     usuario_data["senha_hash"] = hash_password(data.senha)
     usuario = Usuario(**usuario_data)
     usuario.email = str(data.email)
     db.add(usuario)
     try:
+        # Garante o ID do usuario antes de registrar os consentimentos vinculados.
+        db.flush()
+        registrar_consentimentos_iniciais(
+            db,
+            usuario.id,
+            data.consentimento_finalidades,
+            data.consentimento_versao,
+        )
         db.commit()
     except IntegrityError as error:
         db.rollback()

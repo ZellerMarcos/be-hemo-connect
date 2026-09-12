@@ -31,6 +31,7 @@ Base.metadata.create_all(engine)
 @pytest.fixture(autouse=True)
 def clean_database():
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["consentimentos"].delete())
         session.execute(Base.metadata.tables["two_factor_codes"].delete())
         session.execute(Base.metadata.tables["password_reset_tokens"].delete())
         session.execute(Base.metadata.tables["usuarios"].delete())
@@ -42,8 +43,15 @@ def override_get_db():
         yield session
 
 
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def isolate_dependency_overrides():
+    # Isola o override por teste para evitar compartilhamento de sessao entre modulos.
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.clear()
 
 
 def user_payload(
@@ -59,6 +67,9 @@ def user_payload(
         "perfil": "DOADOR",
         "status": status,
         "hemocentro_id": None,
+        "consentimento_aceito": True,
+        "consentimento_versao": "v1.0",
+        "consentimento_finalidades": ["cadastro", "autenticacao", "seguranca"],
     }
 
 
