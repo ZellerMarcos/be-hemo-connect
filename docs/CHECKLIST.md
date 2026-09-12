@@ -44,6 +44,21 @@ Este checklist organiza os requisitos de segurança implementados no backend do 
 
 ---
 
+## 3. Criptografia e Comunicacao Segura
+
+| Requisito | Implementacao | Status |
+|---|---|---|
+| 3.1 — Comunicacao protegida por TLS/HTTPS | Conexao com banco via `sslmode=require` e envio de e-mail por HTTPS | Concluido |
+| 3.2 — Bloqueio de conexoes nao seguras | Middleware redireciona para HTTPS em producao | Concluido |
+| 3.3 — Evidencia de trafego cifrado | Procedimentos de validacao descritos em `docs/SECURITY.md` | Concluido |
+| 3.4 — Dados sensiveis protegidos em repouso | Senha em Argon2id e tokens/codigos temporarios em SHA-256 | Concluido |
+| 3.5 — Algoritmos criptograficos adequados | Argon2id + SHA-256 + comparacao em tempo constante | Concluido |
+| 3.6 — Chaves criptograficas protegidas | Segredos via variaveis de ambiente e politica de rotacao documentada | Concluido |
+| 3.7 — Estrategia de criptografia documentada | Documento dedicado em `docs/SECURITY.md` | Concluido |
+| 3.8 — Justificativa tecnica das escolhas | Justificativas e trade-offs documentados na release do requisito 3 | Concluido |
+
+---
+
 ## 3. Funcionalidades verificadas
 
 ### Cadastro e login
@@ -121,6 +136,8 @@ A documentação detalhada das entregas está disponível em:
 ```text
 docs/releases/autenticacao (requisito 1)/RELEASE_requisito_01.md
 docs/releases/recuperar senha (requisito 2)/RELEASE_requisito_02.md
+docs/releases/criptografia (requisito 3)/RELEASE_requisito_03.md
+docs/SECURITY.md
 ```
 
 Esses arquivos descrevem o funcionamento, as regras de negócio, os endpoints, as decisões técnicas e as observações de configuração.
