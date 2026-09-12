@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.schemas.usuario import Perfil, Status
+from app.schemas.usuario import Perfil
 
 
 class ConsentimentoResponse(BaseModel):
@@ -30,14 +30,11 @@ class RevogarConsentimentoResponse(BaseModel):
 
 
 class TitularDadosResponse(BaseModel):
-    # Reune os dados pessoais e os consentimentos vinculados ao proprio titular.
-    id: int
+    # Reune somente os dados necessarios ao titular, sem identificadores internos de banco.
     nome: str
     cpf: str
     email: EmailStr
     perfil: Perfil
-    status: Status
-    hemocentro_id: int | None
     consentimentos: list[ConsentimentoResponse]
 
 

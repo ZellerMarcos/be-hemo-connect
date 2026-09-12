@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
 
+from app.database import engine
+from app.models.consentimento import Consentimento
 from app.routes.health import router as health_router
 from app.routes.auth import router as auth_router
 from app.routes.hemocentros import router as hemocentros_router
@@ -39,6 +41,18 @@ app.add_middleware(
 )
 
 is_production = os.getenv("APP_ENV", "development").lower() == "production"
+
+
+@app.on_event("startup")
+def ensure_lgpd_tables() -> None:
+    # Tenta criar a tabela de consentimentos quando ainda nao existe no ambiente.
+    try:
+        Consentimento.__table__.create(bind=engine, checkfirst=True)
+    except Exception:  # pragma: no cover - caminho depende do banco/provedor
+        logging.getLogger("app").warning(
+            "Nao foi possivel validar/criar a tabela consentimentos no startup.",
+            exc_info=True,
+        )
 
 
 @app.middleware("http")
