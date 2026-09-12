@@ -4,6 +4,24 @@ Backend do Hemo Connect, uma plataforma para facilitar o agendamento de doacoes,
 aproximar doadores dos hemocentros e incentivar uma frequencia maior de doacoes.
 Nesta etapa, fornece uma API simples para verificar se o servico esta funcionando.
 
+## Sumario
+
+- [Tecnologias](#tecnologias)
+- [Pre-requisitos](#pre-requisitos)
+- [Instalacao](#instalacao)
+- [Execucao](#execucao)
+- [Endpoints de hemocentros](#endpoints-de-hemocentros)
+- [Endpoints de usuarios](#endpoints-de-usuarios)
+- [Fluxo da senha](#fluxo-da-senha)
+- [Autenticacao basica](#autenticacao-basica)
+- [2FA por e-mail](#2fa-por-e-mail)
+- [Envio de e-mails](#envio-de-e-mails)
+- [Comunicacao segura e criptografia](#comunicacao-segura-e-criptografia)
+- [LGPD e privacidade](#lgpd-e-privacidade)
+- [Testes](#testes)
+- [Estrutura](#estrutura)
+- [Escopo atual](#escopo-atual)
+
 ## Tecnologias
 
 - Python 3.12 ou superior
@@ -153,6 +171,23 @@ Consulte:
 - `docs/SECURITY.md`
 - `docs/releases/criptografia (requisito 3)/RELEASE_requisito_03.md`
 
+## LGPD e privacidade
+
+Os endpoints de privacidade permitem que o proprio titular consulte, exporte,
+revogue consentimentos e solicite exclusao/anonimizacao de dados:
+
+| Metodo | Rota | Finalidade |
+| --- | --- | --- |
+| GET | `/privacy/me` | Consulta dados do titular autenticado. |
+| GET | `/privacy/export` | Exporta dados do titular para portabilidade. |
+| POST | `/privacy/consent/revoke` | Revoga consentimento por finalidade. |
+| DELETE | `/privacy/me` | Anonimiza dados pessoais e desativa a conta. |
+
+Detalhes tecnicos e evidencias:
+
+- `docs/LGPD.md`
+- `docs/releases/conformidade lgpd (requisito 4)/RELEASE_requisito_04.md`
+
 ## Testes
 
 O teste atual verifica o endpoint de saude por HTTP. Como ele acessa o servidor
@@ -179,6 +214,12 @@ be-lib-tech/
 
 ## Escopo atual
 
-Ainda nao fazem parte desta etapa o banco MySQL, o ORM SQLAlchemy, autenticacao,
-gerenciamento de usuarios, agendamento de doacoes e integracao com hemocentros.
-Essas funcionalidades serao adicionadas separadamente, de forma incremental.
+O backend ja contempla:
+
+- API FastAPI com rotas de saude, autenticacao, usuarios, hemocentros e privacidade;
+- persistencia com SQLAlchemy;
+- autenticacao com senha hash, fluxo 2FA por e-mail e reset de senha;
+- controles de seguranca de transporte e requisitos de criptografia/LGPD.
+
+Itens como jornada completa de agendamento e historico detalhado de doacoes
+podem evoluir em incrementos futuros.
