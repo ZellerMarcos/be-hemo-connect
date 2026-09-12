@@ -55,6 +55,12 @@ def read_usuario(
 @router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
 def create_usuario_route(data: UsuarioCreate, db: Session = Depends(get_db)):
     # Criação de usuário continua sem exigir sessão porque é o ponto de entrada do cadastro.
+    # O consentimento explicito bloqueia cadastro silencioso sem aceite do titular.
+    if not data.consentimento_aceito:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="O consentimento explicito e obrigatorio para concluir o cadastro.",
+        )
     try:
         return create_usuario(db, data)
     except DuplicateUsuarioError as error:

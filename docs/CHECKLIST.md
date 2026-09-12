@@ -59,6 +59,24 @@ Este checklist organiza os requisitos de segurança implementados no backend do 
 
 ---
 
+## 4. Conformidade com a LGPD
+
+| Requisito | Implementacao | Status |
+|---|---|---|
+| 4.1 — Listagem completa dos dados pessoais coletados | Inventario de dados documentado em `docs/LGPD.md` | Concluido |
+| 4.2 — Associacao de cada dado a uma finalidade | Matriz dado-finalidade registrada em `docs/LGPD.md` | Concluido |
+| 4.3 — Evidencia de minimizacao de dados | Diretrizes e evidencias de minimizacao descritas em `docs/LGPD.md` | Concluido |
+| 4.4 — Registro explicito de consentimento | Cadastro exige consentimento explicito para concluir criacao de usuario | Concluido |
+| 4.5 — Consentimento associado a finalidade | Consentimentos registrados por finalidade na tabela `consentimentos` | Concluido |
+| 4.6 — Possibilidade de revogacao do consentimento | Endpoint dedicado `POST /privacy/consent/revoke` implementado | Concluido |
+| 4.7 — Registro de data e versao do consentimento | `concedido_em` e `versao_termo` persistidos por consentimento | Concluido |
+| 4.8 — Funcionalidade de consulta aos dados do titular | Endpoint dedicado `GET /privacy/me` implementado | Concluido |
+| 4.9 — Funcionalidade de exportacao dos dados | Endpoint dedicado `GET /privacy/export` implementado | Concluido |
+| 4.10 — Funcionalidade de exclusao dos dados pessoais | Endpoint `DELETE /privacy/me` anonimiza dados e desativa conta | Concluido |
+| 4.11 — Fluxo de atendimento aos direitos documentado | Fluxo de atendimento documentado em `docs/LGPD.md` | Concluido |
+
+---
+
 ## 3. Funcionalidades verificadas
 
 ### Cadastro e login
@@ -137,7 +155,9 @@ A documentação detalhada das entregas está disponível em:
 docs/releases/autenticacao (requisito 1)/RELEASE_requisito_01.md
 docs/releases/recuperar senha (requisito 2)/RELEASE_requisito_02.md
 docs/releases/criptografia (requisito 3)/RELEASE_requisito_03.md
+docs/releases/conformidade lgpd (requisito 4)/RELEASE_requisito_04.md
 docs/SECURITY.md
+docs/LGPD.md
 ```
 
 Esses arquivos descrevem o funcionamento, as regras de negócio, os endpoints, as decisões técnicas e as observações de configuração.

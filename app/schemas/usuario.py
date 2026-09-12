@@ -22,6 +22,12 @@ class UsuarioCreate(BaseModel):
     perfil: Perfil
     status: Status
     hemocentro_id: int | None = None
+    # Confirma o aceite explicito no fluxo de cadastro.
+    consentimento_aceito: bool
+    # Versiona o texto do termo para auditoria futura.
+    consentimento_versao: str = Field(min_length=1, max_length=30)
+    # Define as finalidades aceitas para persistencia de consentimento.
+    consentimento_finalidades: list[str] = Field(min_length=1)
 
 
 class UsuarioUpdate(BaseModel):

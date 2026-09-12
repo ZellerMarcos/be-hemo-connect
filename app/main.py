@@ -10,6 +10,7 @@ from starlette.responses import RedirectResponse
 from app.routes.health import router as health_router
 from app.routes.auth import router as auth_router
 from app.routes.hemocentros import router as hemocentros_router
+from app.routes.privacidade import router as privacidade_router
 from app.routes.usuarios import router as usuarios_router
 
 
@@ -62,4 +63,6 @@ async def enforce_transport_security(request: Request, call_next):
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(hemocentros_router)
+# Endpoints de privacidade LGPD (direitos do titular).
+app.include_router(privacidade_router)
 app.include_router(usuarios_router)
