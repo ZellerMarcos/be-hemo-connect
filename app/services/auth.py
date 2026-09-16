@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.models.password_reset_token import PasswordResetToken
 from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
+from app.security.audit import registrar_evento
 from app.security.password import hash_password, verify_password
 from app.security.two_factor import generate_code, hash_code, verify_code
 from app.services.email import send_password_reset_email, send_two_factor_code
@@ -54,11 +55,13 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
     # Primeiro passo do login: localiza o usuário pelo e-mail e valida status e senha.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
+        registrar_evento("login", "falha", ator=email, motivo="credenciais_invalidas")
         return None
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     # Se o usuário ainda está bloqueado, a API deve responder explicitamente com 403 para não revelar demais.
     if usuario.locked_until is not None and usuario.locked_until > now:
+        registrar_evento("login", "bloqueado", ator=email, motivo="limite_tentativas")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Conta temporariamente bloqueada. Tente novamente em 1 hora.",
@@ -86,6 +89,12 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
             usuario.locked_until = now + LOCKOUT_DURATION
 
         db.commit()
+        registrar_evento(
+            "login",
+            "bloqueado" if usuario.locked_until is not None else "falha",
+            ator=email,
+            motivo="credenciais_invalidas",
+        )
         return None
 
     # Tentativa bem-sucedida reinicia o contador para evitar que o bloqueio persista indevidamente.
@@ -93,6 +102,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
     usuario.failed_login_window_started_at = None
     usuario.locked_until = None
     db.commit()
+    registrar_evento("login", "sucesso", ator=email)
     return usuario
 
 
@@ -110,6 +120,7 @@ def validate_active_session(db: Session, email: str) -> Usuario:
     # Valida se a sessão continua ativa e se o usuário não excedeu o limite de 45 minutos sem atividade.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
+        registrar_evento("sessao", "falha", ator=email, motivo="sessao_invalida")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessão inválida.",
@@ -123,6 +134,7 @@ def validate_active_session(db: Session, email: str) -> Usuario:
         return usuario
 
     if now - usuario.last_activity_at > INACTIVITY_TIMEOUT:
+        registrar_evento("sessao", "falha", ator=email, motivo="inatividade")
         # Quando o tempo de inatividade supera o limite, a API nega o acesso como se fosse logout.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -141,6 +153,7 @@ def logout_user(db: Session, email: str) -> None:
     if usuario is not None:
         usuario.last_activity_at = None
         db.commit()
+        registrar_evento("logout", "sucesso", ator=email)
 
 
 def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
@@ -172,14 +185,17 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
         # Evita deixar no banco um desafio que nunca chegou ao usuário.
         db.delete(two_factor_code)
         db.commit()
+        registrar_evento("2fa_envio", "falha", ator=str(usuario.email))
         raise
     logger.info("Token 2FA enviado | status=sucesso | email=%s", usuario.email)
+    registrar_evento("2fa_envio", "sucesso", ator=str(usuario.email))
 
 
 def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
     # Confere se o código enviado pelo usuário é o código válido e ainda não expirou.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
+        registrar_evento("2fa_validacao", "falha", ator=email, motivo="usuario_invalido")
         return False
 
     two_factor_code = db.scalar(
@@ -191,16 +207,19 @@ def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
         .order_by(TwoFactorCode.created_at.desc())
     )
     if two_factor_code is None:
+        registrar_evento("2fa_validacao", "falha", ator=email, motivo="codigo_ausente")
         return False
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     # A validade é conferida antes da comparação, e o código só é consumido após a confirmação.
     if two_factor_code.expires_at <= now or not verify_code(code, two_factor_code.code_hash):
+        registrar_evento("2fa_validacao", "falha", ator=email, motivo="codigo_invalido_ou_expirado")
         return False
 
     # Marcar o registro como usado impede a reutilização do mesmo código.
     two_factor_code.used_at = now
     db.commit()
+    registrar_evento("2fa_validacao", "sucesso", ator=email)
     return True
 
 
@@ -224,6 +243,7 @@ def request_password_reset(db: Session, email: str) -> bool:
             "Usuário solicitou uma redefinição de senha | status=falha | email=%s",
             email,
         )
+        registrar_evento("reset_senha_solicitacao", "falha", ator=email, motivo="usuario_invalido")
         return False
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -266,6 +286,7 @@ def request_password_reset(db: Session, email: str) -> bool:
         raise
     # Confirma que o link foi entregue ao serviço de envio sem registrar o token em si.
     logger.info("Token enviado | status=sucesso | email=%s", email)
+    registrar_evento("reset_senha_solicitacao", "sucesso", ator=email)
     return True
 
 
@@ -283,6 +304,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=token inválido ou expirado"
         )
+        registrar_evento("reset_senha", "falha", motivo="token_invalido_ou_expirado")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",
@@ -293,6 +315,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=token inválido ou expirado"
         )
+        registrar_evento("reset_senha", "falha", motivo="token_invalido_ou_expirado")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",
@@ -303,6 +326,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=usuário inválido ou inativo"
         )
+        registrar_evento("reset_senha", "falha", motivo="usuario_invalido")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",
@@ -324,6 +348,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=token já utilizado ou expirado | email=%s",
             usuario.email,
         )
+        registrar_evento("reset_senha", "falha", ator=str(usuario.email), motivo="token_indisponivel")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token de redefinição inválido ou expirado.",
@@ -334,4 +359,5 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
     db.commit()
     # O evento de sucesso permite auditar a operação sem registrar a nova senha ou o token.
     logger.info("Reset bem sucedido | status=sucesso | email=%s", usuario.email)
+    registrar_evento("reset_senha", "sucesso", ator=str(usuario.email))
     return True

@@ -459,6 +459,43 @@ def test_user_is_blocked_after_five_failed_logins_in_15_minutes():
     assert response.json()["detail"] == "Conta temporariamente bloqueada. Tente novamente em 1 hora."
 
 
+def test_authentication_events_are_registered_for_audit(caplog):
+    create_user()
+
+    with caplog.at_level("INFO", logger="app.audit"), patch(
+        "app.services.auth.send_two_factor_code"
+    ):
+        response = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
+
+    assert response.status_code == 200
+    assert "AUDIT | acao=login | status=sucesso | ator=joao@example.com" in caplog.text
+    assert "AUDIT | acao=2fa_envio | status=sucesso | ator=joao@example.com" in caplog.text
+    assert "SenhaSegura123!" not in caplog.text
+
+
+def test_invalid_two_factor_event_does_not_expose_code(caplog):
+    create_user()
+    with patch("app.services.auth.send_two_factor_code"):
+        client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
+
+    with caplog.at_level("WARNING", logger="app.audit"):
+        response = client.post(
+            "/auth/2fa/verify",
+            json={"email": "joao@example.com", "code": "000000"},
+        )
+
+    assert response.status_code == 401
+    assert "AUDIT | acao=2fa_validacao | status=falha" in caplog.text
+    assert "motivo=codigo_invalido_ou_expirado" in caplog.text
+    assert "000000" not in caplog.text
+
+
 def test_code_is_not_exposed_in_api_response_or_logs(caplog):
     create_user()
     with patch("app.services.auth.send_two_factor_code") as send_email:

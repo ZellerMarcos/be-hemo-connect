@@ -18,6 +18,7 @@ Nesta etapa, fornece uma API simples para verificar se o servico esta funcionand
 - [Envio de e-mails](#envio-de-e-mails)
 - [Comunicacao segura e criptografia](#comunicacao-segura-e-criptografia)
 - [LGPD e privacidade](#lgpd-e-privacidade)
+- [Auditoria e logs](#auditoria-e-logs)
 - [Testes](#testes)
 - [Estrutura](#estrutura)
 - [Escopo atual](#escopo-atual)
@@ -187,6 +188,19 @@ Detalhes tecnicos e evidencias:
 
 - `docs/LGPD.md`
 - `docs/releases/conformidade lgpd (requisito 4)/RELEASE_requisito_04.md`
+
+## Auditoria e logs
+
+O backend registra eventos estruturados de autenticacao, 2FA, sessao, logout e
+redefinicao de senha. Os registros nao incluem senhas, hashes, codigos 2FA,
+tokens, URLs de reset ou segredos de ambiente. A aplicacao apenas emite novos
+eventos; acesso, retencao e trilha administrativa dos logs devem ser
+configurados no provedor de observabilidade de producao.
+
+Consulte:
+
+- `docs/AUDITORIA_E_LOGS.md`
+- `docs/releases/auditoria e logs (requisito 5)/RELEASE_requisito_05.md`
 
 ## Testes
 
