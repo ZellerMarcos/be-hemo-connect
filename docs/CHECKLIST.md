@@ -77,6 +77,17 @@ Este checklist organiza os requisitos de segurança implementados no backend do 
 
 ---
 
+## 5. Auditoria e Logs
+
+| Requisito | Implementacao | Status |
+|---|---|---|
+| 5.1 — Logs de autenticacao registrados | Eventos de login, sessao, logout e redefinicao de senha emitidos pelo logger `app.audit` | Concluido |
+| 5.2 — Logs de falhas e 2FA registrados | Eventos de falha, bloqueio, envio e validacao de 2FA com motivo operacional | Concluido |
+| 5.3 — Protecao contra alteracao dos logs | Aplicacao somente acrescenta eventos; controle de acesso e retencao sao operados no provedor de logs | Concluido |
+| 5.4 — Exemplo de analise de logs apresentado | Formato, correlacao e exemplo anonimizado em `docs/AUDITORIA_E_LOGS.md` | Concluido |
+
+---
+
 ## 3. Funcionalidades verificadas
 
 ### Cadastro e login
@@ -156,8 +167,10 @@ docs/releases/autenticacao (requisito 1)/RELEASE_requisito_01.md
 docs/releases/recuperar senha (requisito 2)/RELEASE_requisito_02.md
 docs/releases/criptografia (requisito 3)/RELEASE_requisito_03.md
 docs/releases/conformidade lgpd (requisito 4)/RELEASE_requisito_04.md
+docs/releases/auditoria e logs (requisito 5)/RELEASE_requisito_05.md
 docs/SECURITY.md
 docs/LGPD.md
+docs/AUDITORIA_E_LOGS.md
 ```
 
 Esses arquivos descrevem o funcionamento, as regras de negócio, os endpoints, as decisões técnicas e as observações de configuração.
