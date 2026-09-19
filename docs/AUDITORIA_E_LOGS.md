@@ -4,13 +4,13 @@ Este documento descreve os controles do requisito 5 para rastreabilidade operaci
 
 ## 1. Escopo dos eventos
 
-Os eventos de auditoria sao emitidos pelo backend no logger `app.audit`, em uma linha por evento:
+Os eventos de auditoria sao persistidos pelo backend na tabela `audit_logs` e tambem emitidos no logger `app.audit` para observabilidade. Cada registro possui hash SHA-256 encadeado ao evento anterior:
 
 ```text
 AUDIT | acao=<evento> | status=<sucesso|falha|bloqueado> | ator=<email> | motivo=<codigo>
 ```
 
-O campo `ator` identifica a conta pelo e-mail quando ele esta disponivel. O campo `motivo` usa codigos operacionais, sem registrar credenciais ou valores temporarios.
+O campo `ator` identifica a conta pelo e-mail quando ele esta disponivel. O campo `motivo` usa codigos operacionais, sem registrar credenciais ou valores temporarios. A migration manual esta em `sql/create_audit_logs.sql`.
 
 | Evento | Quando e registrado |
 |---|---|
@@ -35,7 +35,7 @@ Os testes de regressao verificam explicitamente que senha e codigo 2FA nao sao e
 
 ## 3. Integridade e retencao
 
-A aplicacao apenas acrescenta eventos ao fluxo de logs do processo. Ela nao possui endpoint, tela ou rotina para editar ou apagar registros de auditoria.
+A aplicacao apenas acrescenta eventos ao banco. A tabela deve ser criada com as triggers do SQL manual, que bloqueiam `UPDATE` e `DELETE`. O campo `previous_hash` referencia o hash anterior e `current_hash` permite verificar adulteracao.
 
 Em producao, os logs devem ser coletados pelo provedor de hospedagem (Render) e encaminhados para uma plataforma de observabilidade que ofereca controle de acesso, retencao definida e trilha de alteracoes. A configuracao operacional minima e:
 
@@ -44,7 +44,7 @@ Em producao, os logs devem ser coletados pelo provedor de hospedagem (Render) e 
 3. exportar ou arquivar registros antes da expiracao da retencao;
 4. investigar alteracoes de configuracao no provedor por sua trilha administrativa.
 
-A aplicacao nao cria tabela de auditoria no banco e nao executa alteracoes de esquema.
+O backend nao executa alteracoes de esquema automaticamente. O operador deve executar manualmente `sql/create_audit_logs.sql` no PostgreSQL/Supabase antes do deploy.
 
 ## 4. Exemplo de analise
 
@@ -60,6 +60,7 @@ Uma investigacao pode filtrar `acao=login` e `status=bloqueado` por periodo para
 
 ## 5. Evidencias
 
-- `tests/test_auth.py` valida emissao de eventos de login e 2FA.
+- `tests/test_auth.py` valida que eventos de login, 2FA e sessao sao persistidos em `audit_logs`.
+- O mesmo teste verifica o encadeamento de `previous_hash` e `current_hash`.
 - Os testes tambem confirmam que senha e codigo nao aparecem na captura de logs.
 - A revisao de producao deve registrar uma amostra anonimizada dos eventos no provedor de logs e a configuracao de retencao adotada.

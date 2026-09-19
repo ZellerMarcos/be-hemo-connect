@@ -2,7 +2,7 @@
 
 ## Resumo
 
-Esta entrega adiciona eventos estruturados de auditoria aos fluxos criticos de autenticacao, sem criar ou alterar tabelas no banco de dados.
+Esta entrega adiciona persistencia de eventos estruturados de auditoria aos fluxos criticos de autenticacao. A tabela e as triggers devem ser aplicadas manualmente com `sql/create_audit_logs.sql`.
 
 ## Itens implementados
 
@@ -17,9 +17,10 @@ Esta entrega adiciona eventos estruturados de auditoria aos fluxos criticos de a
 - Eventos de falha com motivo operacional padronizado.
 
 ### 5.3 Protecao contra alteracao dos logs
-- Eventos emitidos apenas por append no logger do processo.
+- Eventos persistidos em `audit_logs` e emitidos no logger do processo.
+- Hash encadeado com `previous_hash` e `current_hash`.
 - Nenhuma rota, tela ou rotina da aplicacao altera ou exclui logs.
-- Retencao, controle de acesso e trilha administrativa devem ser configurados no provedor de logs.
+- Triggers PostgreSQL bloqueiam `UPDATE` e `DELETE`.
 
 ### 5.4 Exemplo de analise de logs apresentado
 - `docs/AUDITORIA_E_LOGS.md` inclui formato dos eventos, exemplo anonimizado e procedimento de correlacao para investigacao.
