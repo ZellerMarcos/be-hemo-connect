@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def _send_email(recipient: str, subject: str, body: str) -> None:
+    # O provedor e chamado somente pelo backend; a chave nunca participa do payload ou dos logs.
     api_key = os.environ.get("BREVO_API_KEY")
     if not api_key:
         raise RuntimeError("BREVO_API_KEY não está configurada")
@@ -29,6 +30,7 @@ def _send_email(recipient: str, subject: str, body: str) -> None:
         "textContent": body,
     }
     try:
+        # A API HTTPS evita SMTP e o timeout impede que login/reset fiquem pendurados indefinidamente.
         response = httpx.post(
             "https://api.brevo.com/v3/smtp/email",
             headers={
@@ -41,6 +43,7 @@ def _send_email(recipient: str, subject: str, body: str) -> None:
         )
         response.raise_for_status()
     except httpx.HTTPError:
+        # A excecao retorna ao fluxo de autenticacao, que remove desafios/tokens não entregues.
         logger.warning("Falha no envio do e-mail | status=falha | recipient=%s", recipient)
         raise
     except Exception:
@@ -50,6 +53,7 @@ def _send_email(recipient: str, subject: str, body: str) -> None:
 
 
 def send_two_factor_code(recipient: str, code: str) -> None:
+    # O código aparece apenas no corpo entregue ao provedor e não é registrado pelo logger.
     _send_email(
         recipient,
         "Código de verificação - Hemo Connect",
@@ -61,6 +65,7 @@ def send_two_factor_code(recipient: str, code: str) -> None:
 
 
 def send_password_reset_email(recipient: str, reset_url: str) -> None:
+    # O link segue no corpo do e-mail, mas nunca é incluído nas mensagens operacionais.
     _send_email(
         recipient,
         "Redefinição de senha - Hemo Connect",

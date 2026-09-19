@@ -70,6 +70,7 @@ def delete_my_data(
     usuario: Usuario = Depends(require_active_session),
 ):
     # Executa exclusao logica com anonimizaçao para reduzir risco de reidentificacao.
+    # A dependencia de sessao garante que somente o proprio titular acione este fluxo.
     excluir_dados_titular(db, usuario)
     return ExclusaoTitularResponse(
         excluido=True,

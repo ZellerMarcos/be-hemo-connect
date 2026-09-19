@@ -14,6 +14,7 @@ logger = logging.getLogger("app.audit")
 
 
 def _hash_event(payload: dict[str, Any]) -> str:
+    # A serializacao canonica garante que o mesmo evento sempre produza o mesmo hash.
     serialized = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
@@ -30,9 +31,13 @@ def registrar_evento(
     user_agent: str | None = None,
 ) -> AuditLog:
     """Persiste um evento sem armazenar credenciais, tokens ou códigos temporários."""
+    # O fluxo cria um payload seguro, encadeia-o ao evento anterior e persiste o registro
+    # antes de emitir a mensagem operacional. Senhas, tokens e codigos nunca entram aqui.
     metadata = {"motivo": motivo} if motivo else {}
     occurred_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Limita o user-agent para evitar que uma entrada externa cresca sem controle.
     safe_user_agent = user_agent[:500] if user_agent else None
+    # O ultimo registro fornece o elo anterior da cadeia de integridade.
     previous = db.scalar(select(AuditLog).order_by(AuditLog.id.desc()))
     previous_hash = previous.current_hash if previous else None
     payload = {
@@ -58,6 +63,7 @@ def registrar_evento(
         previous_hash=previous_hash,
         current_hash=_hash_event(payload),
     )
+    # O commit torna a evidencia duravel; refresh recupera o ID e os valores gerados pelo banco.
     db.add(registro)
     db.commit()
     db.refresh(registro)
@@ -68,6 +74,7 @@ def registrar_evento(
     if motivo:
         campos.append(f"motivo={motivo}")
     mensagem = "AUDIT | " + " | ".join(campos)
+    # Falhas e bloqueios ficam em WARNING para destaque operacional; demais eventos ficam em INFO.
     if status in {"falha", "bloqueado"}:
         logger.warning(mensagem)
     else:
@@ -77,6 +84,7 @@ def registrar_evento(
 
 def verificar_integridade(db: Session) -> tuple[bool, int | None]:
     """Recalcula a cadeia e retorna o primeiro registro inconsistente."""
+    # A verificacao percorre a ordem original e compara tanto o elo anterior quanto o hash do evento.
     previous_hash: str | None = None
     registros = db.scalars(select(AuditLog).order_by(AuditLog.id)).all()
     for registro in registros:
@@ -92,6 +100,7 @@ def verificar_integridade(db: Session) -> tuple[bool, int | None]:
             "user_id": registro.user_id,
         }
         if registro.previous_hash != previous_hash or registro.current_hash != _hash_event(payload):
+            # O ID retornado permite localizar o primeiro ponto de adulteracao ou inconsistência.
             return False, registro.id
         previous_hash = registro.current_hash
     return True, None

@@ -64,12 +64,14 @@ def verify_two_factor(data: TwoFactorVerifyRequest, db: Session = Depends(get_db
 
 @router.post("/forgot-password", response_model=PasswordResetResponse)
 def forgot_password(data: PasswordResetRequest, db: Session = Depends(get_db)):
+    # A resposta uniforme evita revelar se o e-mail informado pertence a uma conta ativa.
     request_password_reset(db, str(data.email))
     return PasswordResetResponse(sent=True)
 
 
 @router.post("/reset-password", response_model=PasswordResetTokenResponse)
 def reset_password_route(data: PasswordResetTokenRequest, db: Session = Depends(get_db)):
+    # O serviço valida e consome o token antes de alterar a senha; a rota apenas traduz o resultado.
     reset_password(db, data.token, data.senha)
     return PasswordResetTokenResponse(reset=True)
 
@@ -99,4 +101,5 @@ def require_active_session(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessão inválida.",
         )
+    # A sessão validada é devolvida para as rotas que precisam do usuário completo.
     return validate_active_session(db, email)

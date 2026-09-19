@@ -20,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 # Mantém os eventos de negócio INFO visíveis no terminal junto dos avisos do Uvicorn.
+# Os valores das variáveis de ambiente não são incluídos nessa configuração nem nas mensagens.
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("app").setLevel(logging.INFO)
 
@@ -47,6 +48,7 @@ is_production = os.getenv("APP_ENV", "development").lower() == "production"
 def ensure_lgpd_tables() -> None:
     # Tenta criar a tabela de consentimentos quando ainda nao existe no ambiente.
     try:
+        # A criação é idempotente; em produção o SQL versionado continua sendo a fonte de verdade.
         Consentimento.__table__.create(bind=engine, checkfirst=True)
     except Exception:  # pragma: no cover - caminho depende do banco/provedor
         logging.getLogger("app").warning(
@@ -59,6 +61,7 @@ def ensure_lgpd_tables() -> None:
 async def enforce_transport_security(request: Request, call_next):
     """Enforce HTTPS in production and attach baseline security headers."""
     if is_production:
+    # Render informa o protocolo original por X-Forwarded-Proto; o redirect ocorre antes da rota.
         forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
         host = request.headers.get("host", "")
         is_local_host = host.startswith("localhost") or host.startswith("127.0.0.1")
@@ -66,11 +69,13 @@ async def enforce_transport_security(request: Request, call_next):
             secure_url = request.url.replace(scheme="https")
             return RedirectResponse(url=str(secure_url), status_code=307)
 
+    # Somente depois de passar pela proteção de transporte a requisição chega ao endpoint.
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if is_production:
+        # HSTS instrui o navegador a continuar usando HTTPS em chamadas futuras.
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
