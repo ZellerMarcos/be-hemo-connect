@@ -194,8 +194,10 @@ Detalhes tecnicos e evidencias:
 O backend registra eventos estruturados de autenticacao, 2FA, sessao, logout e
 redefinicao de senha. Os registros nao incluem senhas, hashes, codigos 2FA,
 tokens, URLs de reset ou segredos de ambiente. A aplicacao apenas emite novos
-eventos; acesso, retencao e trilha administrativa dos logs devem ser
-configurados no provedor de observabilidade de producao.
+eventos e persistidos na tabela `audit_logs`, com hash SHA-256 encadeado,
+timestamp, usuario, motivo e metadados operacionais seguros. O arquivo
+`sql/create_audit_logs.sql` deve ser executado manualmente no PostgreSQL antes
+do deploy; a aplicacao nao cria a tabela automaticamente.
 
 Consulte:
 

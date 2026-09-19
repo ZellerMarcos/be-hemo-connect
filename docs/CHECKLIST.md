@@ -81,10 +81,10 @@ Este checklist organiza os requisitos de segurança implementados no backend do 
 
 | Requisito | Implementacao | Status |
 |---|---|---|
-| 5.1 — Logs de autenticacao registrados | Eventos de login, sessao, logout e redefinicao de senha emitidos pelo logger `app.audit` | Concluido |
-| 5.2 — Logs de falhas e 2FA registrados | Eventos de falha, bloqueio, envio e validacao de 2FA com motivo operacional | Concluido |
-| 5.3 — Protecao contra alteracao dos logs | Aplicacao somente acrescenta eventos; controle de acesso e retencao sao operados no provedor de logs | Concluido |
-| 5.4 — Exemplo de analise de logs apresentado | Formato, correlacao e exemplo anonimizado em `docs/AUDITORIA_E_LOGS.md` | Concluido |
+| 5.1 — Logs de autenticacao registrados | Eventos persistidos de login, sessao, logout e redefinicao na tabela `audit_logs` | Concluido |
+| 5.2 — Logs de falhas e 2FA registrados | Eventos persistidos de falha, bloqueio, envio e validacao de 2FA sem segredos | Concluido |
+| 5.3 — Protecao contra alteracao dos logs | Hash encadeado e triggers PostgreSQL append-only definidos em `sql/create_audit_logs.sql` | Concluido |
+| 5.4 — Exemplo de analise de logs apresentado | Formato, correlacao e exemplo de analise em `docs/AUDITORIA_E_LOGS.md` | Concluido |
 
 ---
 

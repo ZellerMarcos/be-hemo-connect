@@ -16,6 +16,7 @@ from app.models.hemocentro import Base
 from app.models.password_reset_token import PasswordResetToken
 from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
+from app.models.audit_log import AuditLog
 from app.security.two_factor import hash_code
 from app.services.auth import CODE_VALIDITY
 
@@ -31,6 +32,7 @@ Base.metadata.create_all(engine)
 @pytest.fixture(autouse=True)
 def clean_database():
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["audit_logs"].delete())
         session.execute(Base.metadata.tables["consentimentos"].delete())
         session.execute(Base.metadata.tables["two_factor_codes"].delete())
         session.execute(Base.metadata.tables["password_reset_tokens"].delete())
@@ -105,6 +107,41 @@ def test_login_generates_six_digit_code_and_sends_email():
         assert stored is not None
         assert stored.code_hash != sent_codes[0]
         assert stored.expires_at - stored.created_at == CODE_VALIDITY
+
+
+def test_authentication_events_are_saved_in_database():
+    create_user()
+    sent_codes: list[str] = []
+    with patch(
+        "app.services.auth.send_two_factor_code",
+        side_effect=lambda recipient, code: sent_codes.append(code),
+    ):
+        login = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
+    assert login.status_code == 200
+
+    verify = client.post(
+        "/auth/2fa/verify",
+        json={"email": "joao@example.com", "code": sent_codes[0]},
+    )
+    assert verify.status_code == 200
+
+    with Session(engine) as session:
+        events = session.scalars(
+            select(AuditLog).where(AuditLog.actor_email == "joao@example.com").order_by(AuditLog.id)
+        ).all()
+
+    assert [event.event_type for event in events] == [
+        "login",
+        "2fa_envio",
+        "2fa_validacao",
+        "sessao",
+    ]
+    assert all(event.current_hash for event in events)
+    assert all(sent_codes[0] not in str(event.metadata_json) for event in events)
+    assert events[1].previous_hash == events[0].current_hash
 
 
 def test_valid_code_is_accepted_once():
