@@ -1,31 +1,48 @@
 import os
 import logging
+from email.utils import parseaddr
 
-import resend
+import httpx
 
 
 logger = logging.getLogger(__name__)
 
 
 def _send_email(recipient: str, subject: str, body: str) -> None:
-    api_key = os.environ.get("RESEND_API_KEY")
+    api_key = os.environ.get("BREVO_API_KEY")
     if not api_key:
-        raise RuntimeError("RESEND_API_KEY não está configurada")
+        raise RuntimeError("BREVO_API_KEY não está configurada")
 
-    sender = os.environ.get("MAIL_FROM")
-    if not sender:
+    sender_value = os.environ.get("MAIL_FROM")
+    if not sender_value:
         raise RuntimeError("MAIL_FROM não está configurada")
 
-    resend.api_key = api_key
+    sender_name = os.environ.get("MAIL_FROM_NAME", "Hemo Connect")
+    sender_email = parseaddr(sender_value)[1] or sender_value.strip()
+    if not sender_email:
+        raise RuntimeError("MAIL_FROM não contém um endereço válido")
+
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": recipient}],
+        "subject": subject,
+        "textContent": body,
+    }
     try:
-        resend.Emails.send(
-            {
-                "from": sender,
-                "to": [recipient],
-                "subject": subject,
-                "text": body,
-            }
+        response = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "accept": "application/json",
+                "api-key": api_key,
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=10.0,
         )
+        response.raise_for_status()
+    except httpx.HTTPError:
+        logger.warning("Falha no envio do e-mail | status=falha | recipient=%s", recipient)
+        raise
     except Exception:
         logger.warning("Falha no envio do e-mail | status=falha | recipient=%s", recipient)
         raise
