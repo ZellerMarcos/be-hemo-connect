@@ -14,7 +14,7 @@ O backend e responsavel por:
 
 - Frontend -> Backend: HTTPS em producao, com bloqueio de URL insegura no frontend.
 - Backend -> Supabase PostgreSQL: conexao com TLS obrigatorio via `sslmode=require`.
-- Backend -> Resend: chamada HTTPS pelo SDK oficial.
+- Backend -> Brevo: chamada HTTPS pela API transacional `/v3/smtp/email`.
 - Middleware no backend adiciona cabecalhos de seguranca e redireciona para HTTPS em producao.
 
 Cabecalhos enviados pelo backend:
@@ -45,7 +45,7 @@ Observacao:
 ## 5. Protecao de chaves e segredos (3.6)
 
 - Segredos nao sao versionados no repositorio.
-- Variaveis sensiveis sao fornecidas por ambiente (Render/Supabase/Resend).
+- Variaveis sensiveis sao fornecidas por ambiente (Render/Supabase/Brevo).
 - Arquivos locais de ambiente ficam fora do controle de versao.
 
 Politica minima de rotacao:
@@ -60,7 +60,7 @@ Politica minima de rotacao:
 Registrar periodicamente:
 - resultado de `curl -I https://<backend>/health` com headers de seguranca;
 - validacao de conexao com Supabase via logs sem queda para conexao insegura;
-- validacao de envio Resend sem exposicao de segredo em logs.
+- validacao de envio Brevo sem exposicao de segredo em logs.
 
 ## 7. Riscos residuais
 

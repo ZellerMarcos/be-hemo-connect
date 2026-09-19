@@ -8,7 +8,7 @@ Esta entrega formaliza a implementacao e a documentacao de seguranca para cripto
 
 ### 3.1 Comunicacao protegida por TLS/HTTPS
 - Conexao com Supabase configurada com TLS obrigatorio (`sslmode=require`).
-- Integracao com provedor de e-mail via HTTPS (Resend).
+- Integracao com provedor de e-mail via API HTTPS (Brevo).
 
 ### 3.2 Bloqueio de conexoes nao seguras
 - Middleware de transporte seguro no backend:
@@ -44,4 +44,4 @@ Esta entrega formaliza a implementacao e a documentacao de seguranca para cripto
 
 ## Observacoes
 
-- Parte das garantias depende da configuracao correta dos provedores (Render, Supabase e Resend).
+- Parte das garantias depende da configuracao correta dos provedores (Render, Supabase e Brevo).

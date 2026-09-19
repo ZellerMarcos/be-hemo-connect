@@ -135,26 +135,27 @@ Fluxo:
 O endpoint `POST /auth/login` retorna `{"requires_2fa": true}` quando o código
 foi gerado e enviado. O endpoint `POST /auth/2fa/verify` recebe `email` e
 `code`, retornando `{"authenticated": true}` somente para um código válido.
-O código não aparece em respostas ou logs, e o envio usa a API HTTPS do Resend
-por meio das variáveis `RESEND_API_KEY` e `MAIL_FROM`. Esta etapa não cria
+O código não aparece em respostas ou logs, e o envio usa a API HTTPS do Brevo
+por meio das variáveis `BREVO_API_KEY`, `MAIL_FROM` e `MAIL_FROM_NAME`. Esta etapa não cria
 sessão, JWT, logout ou autorização.
 
 ## Envio de e-mails
 
-O Hemo Connect utiliza o Resend como provedor de e-mail através do SDK oficial
-Python `resend`. O envio ocorre por HTTPS, sem SMTP, porque o Render Free não
+O Hemo Connect utiliza o Brevo como provedor de e-mail pela API transacional
+HTTPS. O envio ocorre sem SMTP, porque o Render Free não
 permite tráfego SMTP de saída nas portas 25, 465 e 587.
 
 Configure localmente ou no serviço do Render:
 
 ```env
-RESEND_API_KEY=re_xxxxxxxxx
-MAIL_FROM=Hemo Connect <onboarding@resend.dev>
+BREVO_API_KEY=xkeysib-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MAIL_FROM=seu-remetente@seu-dominio.com
+MAIL_FROM_NAME=Hemo Connect
 ```
 
 No Render, configure essas variáveis no painel do serviço. O arquivo `.env`
 local não é utilizado pelo ambiente de produção. Para usar um remetente próprio,
-o domínio precisa estar verificado e autorizado no Resend.
+o endereço ou domínio precisa estar verificado e autorizado no Brevo.
 
 ## Comunicacao segura e criptografia
 
@@ -162,7 +163,7 @@ O requisito 3 foi consolidado com foco em transporte seguro e protecao de
 credenciais:
 
 - conexao com Supabase exige TLS por `sslmode=require`;
-- envio de e-mail usa API HTTPS do Resend;
+- envio de e-mail usa API HTTPS do Brevo;
 - middleware HTTP aplica cabecalhos de seguranca e, em producao
 	(`APP_ENV=production`), redireciona requisicoes inseguras para HTTPS;
 - senhas usam Argon2id e tokens temporarios usam hash SHA-256.

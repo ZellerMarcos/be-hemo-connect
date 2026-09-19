@@ -8,4 +8,3 @@ httpx
 python-dotenv
 email-validator
 argon2-cffi
-resend
