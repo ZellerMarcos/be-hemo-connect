@@ -33,4 +33,5 @@ def get_db() -> Generator[Session, None, None]:
     try:
         yield db
     finally:
+        # O fechamento libera a conexão mesmo quando a rota termina com exceção.
         db.close()

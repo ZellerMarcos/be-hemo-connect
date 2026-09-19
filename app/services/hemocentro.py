@@ -20,6 +20,7 @@ def create_hemocentro(db: Session, data: HemocentroCreate) -> Hemocentro:
     hemocentro = Hemocentro(**data.model_dump())
     db.add(hemocentro)
     db.commit()
+    # O refresh recupera o ID e demais valores gerados durante a persistência.
     db.refresh(hemocentro)
     return hemocentro
 
@@ -31,6 +32,7 @@ def update_hemocentro(
     for field, value in data.model_dump().items():
         setattr(hemocentro, field, value)
     db.commit()
+    # Recarrega o objeto para devolver ao cliente exatamente o estado confirmado.
     db.refresh(hemocentro)
     return hemocentro
 
@@ -38,4 +40,5 @@ def update_hemocentro(
 def delete_hemocentro(db: Session, hemocentro: Hemocentro) -> None:
     # Remove o registro do banco após confirmar sua existência e validade da requisição.
     db.delete(hemocentro)
+    # A operação só é considerada concluída depois do commit da transação.
     db.commit()
