@@ -70,8 +70,19 @@ def user_payload(
         "status": status,
         "hemocentro_id": None,
         "consentimento_aceito": True,
-        "consentimento_versao": "v1.0",
-        "consentimento_finalidades": ["cadastro", "autenticacao", "seguranca"],
+        "consentimento_versao": "v1.1",
+        "consentimento_finalidades": [
+            "cadastro",
+            "autenticacao",
+            "seguranca",
+            "doacao",
+            "triagem",
+            "atendimento",
+            "historico_doacoes",
+            "comunicacao",
+            "recuperacao_conta",
+            "melhoria_plataforma",
+        ],
     }
 
 

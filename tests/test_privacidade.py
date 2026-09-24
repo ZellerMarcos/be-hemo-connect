@@ -60,8 +60,19 @@ def payload(**overrides: object) -> dict[str, object]:
         "status": "ATIVO",
         "hemocentro_id": None,
         "consentimento_aceito": True,
-        "consentimento_versao": "v1.0",
-        "consentimento_finalidades": ["cadastro", "autenticacao", "seguranca"],
+        "consentimento_versao": "v1.1",
+        "consentimento_finalidades": [
+            "cadastro",
+            "autenticacao",
+            "seguranca",
+            "doacao",
+            "triagem",
+            "atendimento",
+            "historico_doacoes",
+            "comunicacao",
+            "recuperacao_conta",
+            "melhoria_plataforma",
+        ],
     }
     data.update(overrides)
     return data
@@ -103,7 +114,7 @@ def test_privacy_me_returns_titular_data(authenticated_user):
     assert response.status_code == 200
     body = response.json()
     assert body["email"] == "joao@example.com"
-    assert len(body["consentimentos"]) == 3
+    assert len(body["consentimentos"]) == 10
     assert "id" not in body
     assert "status" not in body
     assert "hemocentro_id" not in body
