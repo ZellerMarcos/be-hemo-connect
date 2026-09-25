@@ -31,6 +31,7 @@ LOCKOUT_DURATION = timedelta(hours=1)
 
 def get_login_error_detail(db: Session, email: str) -> str:
     # Monta a mensagem mais útil possível para o cliente antes do bloqueio definitivo da conta.
+    # A mensagem varia conforme o estado interno, mas nunca revela se a senha armazenada existe.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
         return "E-mail ou senha inválidos."
@@ -114,6 +115,7 @@ def update_last_activity(db: Session, email: str) -> Usuario | None:
         return None
     usuario.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db.commit()
+    # Este evento representa a criacao/renovacao da sessao; nao registra senha ou token de sessao.
     registrar_evento(db, "sessao", "sucesso", ator=email, user_id=usuario.id, motivo="sessao_criada")
     return usuario
 
@@ -133,6 +135,7 @@ def validate_active_session(db: Session, email: str) -> Usuario:
         # Primeira validação: marca a atividade atual para iniciar a contagem do timeout.
         usuario.last_activity_at = now
         db.commit()
+        # A primeira requisicao autenticada inicia o relogio sem criar um evento de login duplicado.
         return usuario
 
     if now - usuario.last_activity_at > INACTIVITY_TIMEOUT:
@@ -146,6 +149,7 @@ def validate_active_session(db: Session, email: str) -> Usuario:
     # Qualquer requisição válida renova a atividade para manter a sessão viva.
     usuario.last_activity_at = now
     db.commit()
+    # Renovacoes normais da sessao alteram apenas a atividade; eventos de falha sao registrados acima.
     return usuario
 
 
@@ -155,6 +159,7 @@ def logout_user(db: Session, email: str) -> None:
     if usuario is not None:
         usuario.last_activity_at = None
         db.commit()
+        # O logout e registrado somente depois de limpar a atividade persistida.
         registrar_evento(db, "logout", "sucesso", ator=email, user_id=usuario.id)
 
 
@@ -180,6 +185,7 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
     )
     db.add(two_factor_code)
     db.commit()
+    # O desafio fica persistido antes do envio para que a validacao encontre somente o codigo atual.
     try:
         # Envia o código ao e-mail do usuário, caso a entrega falhe, o registro é descartado.
         send_two_factor_code(str(usuario.email), code)
@@ -187,8 +193,10 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
         # Evita deixar no banco um desafio que nunca chegou ao usuário.
         db.delete(two_factor_code)
         db.commit()
+        # A falha de entrega tambem deixa uma evidencia de auditoria, sem registrar o codigo.
         registrar_evento(db, "2fa_envio", "falha", ator=str(usuario.email), user_id=usuario.id)
         raise
+    # O log confirma a tentativa de entrega sem expor o valor do código.
     logger.info("Token 2FA enviado | status=sucesso | email=%s", usuario.email)
     registrar_evento(db, "2fa_envio", "sucesso", ator=str(usuario.email), user_id=usuario.id)
 
@@ -215,12 +223,14 @@ def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     # A validade é conferida antes da comparação, e o código só é consumido após a confirmação.
     if two_factor_code.expires_at <= now or not verify_code(code, two_factor_code.code_hash):
+        # Expiracao e codigo incorreto compartilham a mesma resposta para evitar enumeracao.
         registrar_evento(db, "2fa_validacao", "falha", ator=email, user_id=usuario.id, motivo="codigo_invalido_ou_expirado")
         return False
 
     # Marcar o registro como usado impede a reutilização do mesmo código.
     two_factor_code.used_at = now
     db.commit()
+    # O evento de sucesso so ocorre depois de consumir o desafio contra reutilizacao.
     registrar_evento(db, "2fa_validacao", "sucesso", ator=email, user_id=usuario.id)
     return True
 
@@ -239,8 +249,10 @@ def verify_reset_token(token: str, token_hash: str) -> bool:
 
 
 def request_password_reset(db: Session, email: str) -> bool:
+    # O pedido registra sucesso/falha no fluxo de auditoria, mas nunca persiste o token bruto.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
     if usuario is None or usuario.status != "ATIVO":
+        # O aviso registra a tentativa operacional, enquanto a resposta externa permanece uniforme.
         logger.warning(
             "Usuário solicitou uma redefinição de senha | status=falha | email=%s",
             email,
@@ -285,6 +297,7 @@ def request_password_reset(db: Session, email: str) -> bool:
         )
         db.delete(reset_token)
         db.commit()
+        # Sem entrega, o token deixa de ser utilizavel e a falha fica registrada sem o link.
         raise
     # Confirma que o link foi entregue ao serviço de envio sem registrar o token em si.
     logger.info("Token enviado | status=sucesso | email=%s", email)
@@ -293,6 +306,7 @@ def request_password_reset(db: Session, email: str) -> bool:
 
 
 def reset_password(db: Session, token: str, new_password: str) -> bool:
+    # A busca compara somente o hash do token recebido; o valor bruto nunca vai para logs ou banco.
     token_hash = hash_reset_token(token)
     db_token = db.scalar(
         select(PasswordResetToken)
@@ -303,6 +317,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
     )
     if db_token is None:
         # Tokens ausentes, utilizados ou pertencentes a outro valor são registrados sem revelar o conteúdo recebido.
+        # O mesmo motivo cobre token inexistente e já consumido para evitar enumeracao.
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=token inválido ou expirado"
         )
@@ -314,6 +329,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     if db_token.expires_at <= now:
+        # Expiracao e tratada como falha de validacao, sem devolver detalhes do registro ao cliente.
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=token inválido ou expirado"
         )
@@ -325,6 +341,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
 
     usuario = db.get(Usuario, db_token.usuario_id)
     if usuario is None or usuario.status != "ATIVO":
+        # Um token ligado a conta inativa não pode alterar credenciais.
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=usuário inválido ou inativo"
         )
@@ -346,6 +363,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
     )
     if token_update.rowcount != 1:
         db.rollback()
+        # A atualização condicional protege contra duas requisições concorrentes consumirem o mesmo token.
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=token já utilizado ou expirado | email=%s",
             usuario.email,

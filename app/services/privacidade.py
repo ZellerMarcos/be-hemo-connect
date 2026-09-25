@@ -19,11 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 def _missing_consent_table(error: ProgrammingError) -> bool:
+    # Diferencia a ausencia conhecida da tabela de outros erros de banco que devem subir.
     message = str(error).lower()
     return "consentimentos" in message and "does not exist" in message
 
 
 def _consent_table_exists(db: Session) -> bool:
+    # A verificacao permite manter o cadastro e a consulta seguros durante a transicao de schema.
     return inspect(db.bind).has_table("consentimentos", schema=DB_SCHEMA)
 
 
@@ -54,6 +56,7 @@ def registrar_consentimentos_iniciais(
 def listar_consentimentos(db: Session, usuario_id: int) -> list[Consentimento]:
     # Retorna o historico do titular, priorizando finalidade e ordem temporal mais recente.
     if not _consent_table_exists(db):
+        # A consulta de dados continua sem consentimentos quando o schema opcional ainda não foi aplicado.
         logger.warning(
             "Tabela consentimentos ausente ao listar consentimentos | usuario_id=%s",
             usuario_id,
@@ -71,6 +74,7 @@ def listar_consentimentos(db: Session, usuario_id: int) -> list[Consentimento]:
     except ProgrammingError as error:
         if _missing_consent_table(error):
             db.rollback()
+            # Rollback limpa a sessão quebrada antes de devolver a resposta degradada ao titular.
             logger.warning(
                 "Tabela consentimentos ausente ao listar consentimentos | usuario_id=%s",
                 usuario_id,
@@ -107,6 +111,7 @@ def revogar_consentimento(db: Session, usuario_id: int, finalidade: str) -> Cons
     consentimento.concedido = False
     consentimento.revogado_em = agora
     db.commit()
+    # A revogacao preserva o historico para auditoria em vez de apagar a evidencia.
     db.refresh(consentimento)
     return consentimento
 
@@ -151,6 +156,7 @@ def excluir_dados_titular(db: Session, usuario: Usuario) -> None:
     ).all()
     for code in codigos_ativos:
         code.used_at = agora
+    # Desafios 2FA e tokens de reset ativos são invalidados junto com a conta anonimizada.
 
     tokens_ativos = db.scalars(
         select(PasswordResetToken).where(
@@ -173,9 +179,11 @@ def excluir_dados_titular(db: Session, usuario: Usuario) -> None:
             consentimento.concedido = False
             consentimento.revogado_em = agora
     else:
+        # A anonimização principal permanece possível, mas a ausência da tabela impede revogar o histórico.
         logger.warning(
             "Tabela consentimentos ausente ao excluir dados do titular | usuario_id=%s",
             usuario.id,
         )
 
+    # Um unico commit mantém a anonimização e a invalidação dos artefatos consistentes.
     db.commit()

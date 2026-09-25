@@ -29,9 +29,11 @@ def _check_duplicates(db: Session, cpf: str, email: str, usuario_id: int | None 
     cpf_query = select(Usuario.id).where(Usuario.cpf == cpf)
     email_query = select(Usuario.id).where(Usuario.email == email)
     if usuario_id is not None:
+        # Em uma edição, o próprio registro não deve colidir consigo mesmo.
         cpf_query = cpf_query.where(Usuario.id != usuario_id)
         email_query = email_query.where(Usuario.id != usuario_id)
     if db.scalar(cpf_query) is not None:
+        # O erro de domínio permite que a rota devolva conflito sem expor detalhes do banco.
         raise DuplicateUsuarioError("cpf")
     if db.scalar(email_query) is not None:
         raise DuplicateUsuarioError("email")
@@ -63,8 +65,10 @@ def create_usuario(db: Session, data: UsuarioCreate) -> Usuario:
         )
         db.commit()
     except IntegrityError as error:
+        # Rollback desfaz usuário e consentimentos quando a restrição de unicidade falha.
         db.rollback()
         raise DuplicateUsuarioError("cpf ou email") from error
+    # Refresh devolve o registro com o ID e valores confirmados pelo banco.
     db.refresh(usuario)
     return usuario
 
@@ -77,8 +81,10 @@ def update_usuario(db: Session, usuario: Usuario, data: UsuarioUpdate) -> Usuari
     try:
         db.commit()
     except IntegrityError as error:
+        # A atualização inteira é desfeita para não deixar campos parcialmente persistidos.
         db.rollback()
         raise DuplicateUsuarioError("cpf ou email") from error
+    # Recarrega o usuário após o commit para refletir o estado persistido.
     db.refresh(usuario)
     return usuario
 
@@ -86,4 +92,5 @@ def update_usuario(db: Session, usuario: Usuario, data: UsuarioUpdate) -> Usuari
 def delete_usuario(db: Session, usuario: Usuario) -> None:
     # Remove o usuário do banco, encerrando o registro após a confirmação de existência.
     db.delete(usuario)
+    # A exclusão só é confirmada depois que a transação é efetivamente gravada.
     db.commit()

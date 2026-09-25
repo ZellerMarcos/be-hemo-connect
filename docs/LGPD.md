@@ -77,7 +77,10 @@ Lacunas para proxima fase:
 ## 6. Estado atual da implementacao
 
 - consentimento explicito exigido no cadastro;
+- politica de privacidade `v1.1` apresentada integralmente em modal antes do aceite;
+- aceite liberado somente depois da rolagem completa do texto da politica;
 - consentimentos persistidos por finalidade com versao de termo e timestamp;
+- finalidades registradas no cadastro: cadastro, autenticacao, seguranca, doacao, triagem, atendimento, historico de doacoes, comunicacao, recuperacao de conta e melhoria da plataforma;
 - revogacao de consentimento por finalidade disponivel em endpoint dedicado;
 - consulta de dados do titular disponivel em `GET /privacy/me`;
 - exportacao dos dados do titular disponivel em `GET /privacy/export`;
