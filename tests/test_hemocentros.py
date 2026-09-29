@@ -7,6 +7,8 @@ from sqlalchemy.pool import StaticPool
 from app.database import get_db
 from app.main import app
 from app.models.hemocentro import Base
+from app.models.usuario import Usuario
+from app.security.password import hash_password
 
 
 engine = create_engine(
@@ -22,15 +24,29 @@ def override_get_db():
         yield session
 
 
-app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def clean_database():
+def isolate_test_database():
+    app.dependency_overrides[get_db] = override_get_db
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["audit_logs"].delete())
         session.execute(Base.metadata.tables["hemocentros"].delete())
+        session.execute(Base.metadata.tables["usuarios"].delete())
+        session.add(
+            Usuario(
+                nome="Joao Silva",
+                cpf="12345678901",
+                email="joao@example.com",
+                senha_hash=hash_password("SenhaSegura123!"),
+                perfil="DOADOR",
+                status="ATIVO",
+            )
+        )
         session.commit()
+    yield
+    app.dependency_overrides.clear()
 
 
 def payload(name: str = "Hemocentro Central") -> dict[str, str]:
@@ -126,7 +142,11 @@ def test_invalid_status():
     invalid = payload()
     invalid["status"] = "PENDENTE"
 
-    response = client.post("/hemocentros", json=invalid)
+    response = client.post(
+        "/hemocentros",
+        json=invalid,
+        headers={"x-user-email": "joao@example.com"},
+    )
 
     assert response.status_code == 422
 
