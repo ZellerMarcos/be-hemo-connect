@@ -1,0 +1,114 @@
+name: DevSecOps Backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devsecops-backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: Secrets - TruffleHog
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan Git history and tracked files
+        uses: trufflesecurity/trufflehog@v3.97.9
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  sca:
+    name: Dependencies - Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Scan dependency vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          vuln-type: library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: 1
+          format: table
+          skip-dirs: .git,.venv
+
+  sast:
+    name: SAST - Semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python for Semgrep OSS
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Semgrep OSS
+        run: python -m pip install --disable-pip-version-check semgrep==1.178.0
+
+      - name: Scan Python source
+        run: >-
+          semgrep scan
+          --config p/owasp-top-ten
+          --config p/cwe-top-25
+          --exclude .git
+          --exclude .venv
+          --severity ERROR
+          --error
+          app tests
+
+  backend-validation:
+    name: Backend validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Run backend test suite
+        env:
+          APP_ENV: test
+        run: python -m pytest tests -q --ignore=tests/test_health.py
+
+      - name: Run health endpoint integration test
+        env:
+          APP_ENV: test
+        run: |
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+          server_pid=$!
+          trap 'kill $server_pid' EXIT
+          for attempt in {1..10}; do
+            if curl --fail --silent http://127.0.0.1:8000/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          python -m pytest tests/test_health.py -q
