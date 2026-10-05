@@ -19,6 +19,7 @@ Nesta etapa, fornece uma API simples para verificar se o servico esta funcionand
 - [Comunicacao segura e criptografia](#comunicacao-segura-e-criptografia)
 - [LGPD e privacidade](#lgpd-e-privacidade)
 - [Auditoria e logs](#auditoria-e-logs)
+- [Manual do enfermeiro](#manual-do-enfermeiro)
 - [Testes](#testes)
 - [Estrutura](#estrutura)
 - [Escopo atual](#escopo-atual)
@@ -204,6 +205,13 @@ Consulte:
 
 - `docs/AUDITORIA_E_LOGS.md`
 - `docs/releases/auditoria e logs (requisito 5)/RELEASE_requisito_05.md`
+
+## Manual do enfermeiro
+
+O [Manual do Enfermeiro](docs/MANUAL_ENFERMEIRO.md) orienta o acesso, a consulta
+dos dados do doador e o fluxo previsto de avaliacao e finalizacao da triagem.
+O documento identifica as funcionalidades ainda pendentes e deve ser validado
+com as telas reais antes de sua distribuicao para uso em producao.
 
 ## Testes
 
