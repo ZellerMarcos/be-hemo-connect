@@ -107,6 +107,17 @@ O servidor fica disponivel em `http://127.0.0.1:8000`.
 Os campos obrigatorios sao `nome`, `endereco`, `telefone` e `status`. O campo
 `status` aceita somente `ATIVO` ou `INATIVO`.
 
+Administradores e enfermeiros com sessao ativa podem cadastrar novos hemocentros
+por `POST /hemocentros`. No frontend, a acao **Hemocentros** aparece no cabecalho
+dessas duas areas e abre `/hemocentros`, com formulario e lista de unidades.
+O cadastro nao altera o vinculo institucional do enfermeiro. A edicao continua
+restrita ao administrador ou ao responsavel pela propria unidade, e a exclusao
+continua exclusiva do administrador.
+
+Os textos sao normalizados removendo espacos nas extremidades e nao podem ser
+vazios: nome aceita ate 255 caracteres, endereco ate 500 e telefone ate 30.
+Somente unidades `ATIVO` aparecem nas selecoes de agendamento e aprovacao.
+
 ## Endpoints de usuarios
 
 | Metodo | Rota | Finalidade |

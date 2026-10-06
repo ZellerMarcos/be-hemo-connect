@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -99,6 +99,97 @@ def test_create_hemocentro():
     assert response.status_code == 201
     assert response.json()["nome"] == "Hemocentro Central"
     assert set(response.json()) == {"id", "nome", "endereco", "telefone", "status"}
+
+
+def change_profile(perfil: str) -> None:
+    with Session(engine) as session:
+        usuario = session.scalar(select(Usuario).where(Usuario.email == "joao@example.com"))
+        assert usuario is not None
+        usuario.perfil = perfil
+        session.commit()
+
+
+def test_nurse_can_create_hemocentro_without_changing_institution():
+    original = client.post("/hemocentros", json=payload("Unidade original"), headers=auth_headers(engine)).json()
+    change_profile("ENFERMEIRO")
+    with Session(engine) as session:
+        usuario = session.scalar(select(Usuario).where(Usuario.email == "joao@example.com"))
+        usuario.hemocentro_id = original["id"]
+        session.commit()
+    headers = auth_headers(engine)
+
+    response = client.post("/hemocentros", json=payload(), headers=headers)
+
+    assert response.status_code == 201
+    assert response.json() == client.get(f"/hemocentros/{response.json()['id']}", headers=headers).json()
+    with Session(engine) as session:
+        usuario = session.scalar(select(Usuario).where(Usuario.email == "joao@example.com"))
+        assert usuario.hemocentro_id == original["id"]
+
+
+@pytest.mark.parametrize("perfil", ["DOADOR", "MEDICO", "RECEPCIONISTA", "RESPONSAVEL_HEMOCENTRO"])
+def test_other_profiles_cannot_create_hemocentro(perfil: str):
+    change_profile(perfil)
+
+    response = client.post("/hemocentros", json=payload(), headers=auth_headers(engine))
+
+    assert response.status_code == 403
+    assert client.get("/hemocentros", headers=auth_headers(engine)).json() == []
+
+
+def test_unauthenticated_user_cannot_create_hemocentro():
+    response = client.post("/hemocentros", json=payload())
+
+    assert response.status_code == 401
+
+
+def test_inactive_nurse_cannot_create_hemocentro():
+    change_profile("ENFERMEIRO")
+    headers = auth_headers(engine)
+    with Session(engine) as session:
+        usuario = session.scalar(select(Usuario).where(Usuario.email == "joao@example.com"))
+        usuario.status = "INATIVO"
+        session.commit()
+
+    response = client.post("/hemocentros", json=payload(), headers=headers)
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("method", ["put", "delete"])
+def test_nurse_cannot_modify_existing_hemocentro(method: str):
+    created = client.post("/hemocentros", json=payload(), headers=auth_headers(engine)).json()
+    change_profile("ENFERMEIRO")
+    headers = auth_headers(engine)
+    kwargs = {"headers": headers}
+    if method == "put":
+        kwargs["json"] = payload("Nome alterado")
+
+    response = getattr(client, method)(f"/hemocentros/{created['id']}", **kwargs)
+
+    assert response.status_code == 403
+    assert client.get(f"/hemocentros/{created['id']}", headers=headers).json() == created
+
+
+@pytest.mark.parametrize("field,limit", [("nome", 255), ("endereco", 500), ("telefone", 30)])
+@pytest.mark.parametrize("invalid", ["blank", "too_long"])
+def test_invalid_text_fields(field: str, limit: int, invalid: str):
+    data = payload()
+    data[field] = "   " if invalid == "blank" else "x" * (limit + 1)
+
+    response = client.post("/hemocentros", json=data, headers=auth_headers(engine))
+
+    assert response.status_code == 422
+
+
+def test_text_fields_are_trimmed():
+    data = {key: f"  {value}  " for key, value in payload().items() if key != "status"}
+    data["status"] = "ATIVO"
+
+    response = client.post("/hemocentros", json=data, headers=auth_headers(engine))
+
+    assert response.status_code == 201
+    assert {key: response.json()[key] for key in payload()} == payload()
 
 
 def test_update_hemocentro():

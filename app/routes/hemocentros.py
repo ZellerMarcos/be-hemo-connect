@@ -53,7 +53,7 @@ def read_hemocentro(
 def create_hemocentro_route(
     data: HemocentroCreate,
     db: Session = Depends(get_db),
-    _: Usuario = Depends(require_roles("ADMINISTRADOR")),
+    _: Usuario = Depends(require_roles("ADMINISTRADOR", "ENFERMEIRO")),
 ):
     # Criação de hemocentro precisa de sessão válida para evitar ações sem usuário autenticado.
     return create_hemocentro(db, data)
