@@ -27,6 +27,7 @@ Base.metadata.create_all(engine)
 @pytest.fixture(autouse=True)
 def clean_database():
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["auth_sessions"].delete())
         session.execute(Base.metadata.tables["consentimentos"].delete())
         session.execute(Base.metadata.tables["two_factor_codes"].delete())
         session.execute(Base.metadata.tables["password_reset_tokens"].delete())
@@ -102,7 +103,7 @@ def authenticated_user() -> dict[str, object]:
     )
     assert verify.status_code == 200
     return {
-        "headers": {"x-user-email": "joao@example.com"},
+        "headers": {"Authorization": f"Bearer {verify.json()['access_token']}"},
         "usuario_id": created["id"],
     }
 

@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routes.auth import require_active_session
+from app.models.usuario import Usuario
+from app.security.authorization import require_roles
 from app.schemas.hemocentro import (
     HemocentroCreate,
     HemocentroResponse,
@@ -51,7 +53,7 @@ def read_hemocentro(
 def create_hemocentro_route(
     data: HemocentroCreate,
     db: Session = Depends(get_db),
-    _: object = Depends(require_active_session),
+    _: Usuario = Depends(require_roles("ADMINISTRADOR")),
 ):
     # Criação de hemocentro precisa de sessão válida para evitar ações sem usuário autenticado.
     return create_hemocentro(db, data)
@@ -62,9 +64,11 @@ def update_hemocentro_route(
     hemocentro_id: int,
     data: HemocentroUpdate,
     db: Session = Depends(get_db),
-    _: object = Depends(require_active_session),
+    usuario: Usuario = Depends(require_roles("ADMINISTRADOR", "RESPONSAVEL_HEMOCENTRO")),
 ):
     # Atualização de dados protegidos só é permitida quando a sessão continua ativa.
+    if usuario.perfil != "ADMINISTRADOR" and usuario.hemocentro_id != hemocentro_id:
+        raise HTTPException(403, "Sem permissão para alterar este hemocentro.")
     hemocentro = find_or_404(db, hemocentro_id)
     return update_hemocentro(db, hemocentro, data)
 
@@ -73,7 +77,7 @@ def update_hemocentro_route(
 def delete_hemocentro_route(
     hemocentro_id: int,
     db: Session = Depends(get_db),
-    _: object = Depends(require_active_session),
+    _: Usuario = Depends(require_roles("ADMINISTRADOR")),
 ):
     # Exclusão também depende de sessão ativa para cumprir o limite de inatividade do backend.
     hemocentro = find_or_404(db, hemocentro_id)

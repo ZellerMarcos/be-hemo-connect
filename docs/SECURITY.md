@@ -16,6 +16,9 @@ O backend e responsavel por:
 - Backend -> Supabase PostgreSQL: conexao com TLS obrigatorio via `sslmode=require`.
 - Backend -> Brevo: chamada HTTPS pela API transacional `/v3/smtp/email`.
 - Middleware no backend adiciona cabecalhos de seguranca e redireciona para HTTPS em producao.
+- Operações protegidas exigem sessão Bearer validada no servidor; um e-mail em
+  cabeçalho não concede acesso. Perfil, vínculo institucional e autoria são
+  verificados no backend da enfermagem.
 
 Cabecalhos enviados pelo backend:
 - `Strict-Transport-Security` (somente em producao)
@@ -28,6 +31,8 @@ Cabecalhos enviados pelo backend:
 - Senhas: hash Argon2id.
 - Codigo 2FA: hash SHA-256.
 - Token de reset: hash SHA-256 + comparacao em tempo constante.
+- Sessão: token opaco aleatório com apenas seu hash SHA-256 armazenado;
+  expiração por inatividade e revogação explícita.
 
 Observacao:
 - Este projeto nao persiste senha em texto puro.

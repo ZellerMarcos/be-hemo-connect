@@ -38,7 +38,7 @@ Nesta etapa, fornece uma API simples para verificar se o servico esta funcionand
 
 ## Instalacao
 
-Execute os comandos a partir desta pasta (`be-lib-tech`):
+Execute os comandos a partir desta pasta (`be-hemo-connect`):
 
 ```powershell
 py -3 -m venv .venv
@@ -56,6 +56,29 @@ python -m pip install -r requirements.txt
 O ambiente virtual e local e esta incluido no `.gitignore`.
 
 ## Execucao
+
+Antes de iniciar, crie um arquivo `.env` na raiz do backend a partir de
+`.env.example`, caso ainda nao exista:
+
+```powershell
+Copy-Item -LiteralPath '.env.example' -Destination '.env'
+```
+
+Nao sobrescreva um `.env` existente. Edite o arquivo local e preencha
+`DATABASE_URL` com a URL PostgreSQL do Supabase, utilizando o driver psycopg:
+
+```env
+DATABASE_URL=postgresql+psycopg://USUARIO:SENHA_CODIFICADA@HOST:5432/postgres?sslmode=require
+```
+
+Substitua os marcadores pelos dados da conexao. Caracteres especiais da senha
+devem ser percent-encoded. Nunca compartilhe a senha nem versione o `.env`.
+Configure tambem as variaveis do Brevo para utilizar login com 2FA.
+
+O arquivo `.env.example` nao e carregado automaticamente. Sem `DATABASE_URL`
+no `.env` ou no ambiente do processo, o backend interrompe a inicializacao com
+`RuntimeError`. Variaveis ja definidas no processo prevalecem sobre o arquivo.
+Reinicie o Uvicorn depois de alterar a configuracao.
 
 Com o ambiente virtual ativado:
 
@@ -91,8 +114,35 @@ Os campos obrigatorios sao `nome`, `endereco`, `telefone` e `status`. O campo
 | GET | `/usuarios` | Lista os usuarios cadastrados. |
 | GET | `/usuarios/{id}` | Busca um usuario pelo ID. |
 | POST | `/usuarios` | Cadastra um usuario recebendo uma senha e armazenando seu hash. |
+| POST | `/usuarios/solicitar-enfermagem` | Solicita cadastro publico de enfermeiro com COREN e UF, sem liberar acesso. |
+| GET | `/usuarios/aprovacoes/pendentes` | Administrador: lista solicitacoes de enfermagem paginadas. |
+| POST | `/usuarios/aprovacoes/{id}/aprovar` | Administrador: confirma conferencia profissional e vincula a um hemocentro ativo. |
 | PUT | `/usuarios/{id}` | Atualiza os dados permitidos do usuario. |
 | DELETE | `/usuarios/{id}` | Exclui um usuario. |
+
+### Cadastro de enfermeiro com COREN
+
+No frontend, o titular escolhe **Doador(a)** ou **Enfermeiro(a)**. O doador
+continua ativo após o cadastro. Para enfermeiros, número do COREN e UF são
+obrigatórios; a solicitação fica `INATIVO`, com `aprovacao_pendente=true`
+e sem hemocentro. O cadastro não permite enviar atributos de aprovação.
+
+O administrador acessa `/users-approve`, confere externamente o registro,
+a categoria, sua situação e a identidade, escolhe um hemocentro ativo e
+confirma a conferência antes de aprovar. Só então o titular pode entrar com
+senha e 2FA. O cadastro comum e o PUT não substituem a aprovação de uma
+solicitação pendente.
+
+**Não há validação profissional automática:** o sistema verifica apenas o
+preenchimento/formato e a unicidade de número + UF. Os enfermeiros legados
+não são desativados retroativamente.
+
+Antes de publicar, aplique integralmente
+[`sql/002_cadastro_enfermeiro_coren.sql`](sql/002_cadastro_enfermeiro_coren.sql)
+no schema existente, em homologação primeiro. O script pressupõe a estrutura
+base da aplicação; não cria `usuarios`, `hemocentros` ou `audit_logs`.
+Não foi executado automaticamente no Supabase. Consulte o
+[contrato de implantação](docs/VISAO_ENFERMEIRO.md).
 
 ### Fluxo da senha
 
@@ -108,16 +158,16 @@ cada hash. Os parametros de custo centralizados no modulo de seguranca usam
 `salt_len=16`, equilibrando protecao e tempo adequado para desenvolvimento
 local e um projeto universitario.
 
-Em uma etapa futura, a senha informada podera ser validada com
-`verify_password()` contra o hash armazenado. O PUT atual nao altera a senha.
+No login, `verify_password()` valida a senha contra o hash armazenado.
+O PUT de usuario nao altera a senha; a redefinicao utiliza token temporario.
 
 ## Autenticacao basica
 
 `POST /auth/login` recebe e-mail e senha, localiza o usuario, verifica se ele
 esta `ATIVO` e compara a senha com o hash Argon2id armazenado. E-mail inexistente,
-senha incorreta e usuario `INATIVO` retornam a mesma resposta `401` generica.
-O retorno contem somente dados basicos do usuario; nunca inclui `senha` ou
-`senha_hash`.
+e usuario `INATIVO` retornam `401`; senhas incorretas podem informar tentativas
+restantes. O bloqueio temporario retorna `403` em novas tentativas.
+O login inicia o 2FA e nunca retorna `senha` ou `senha_hash`.
 
 ## 2FA por e-mail
 
@@ -135,10 +185,13 @@ Fluxo:
 
 O endpoint `POST /auth/login` retorna `{"requires_2fa": true}` quando o código
 foi gerado e enviado. O endpoint `POST /auth/2fa/verify` recebe `email` e
-`code`, retornando `{"authenticated": true}` somente para um código válido.
+`code`, retornando `authenticated=true`, o usuario real e um token Bearer
+somente para um código válido.
 O código não aparece em respostas ou logs, e o envio usa a API HTTPS do Brevo
 por meio das variáveis `BREVO_API_KEY`, `MAIL_FROM` e `MAIL_FROM_NAME`. Esta etapa não cria
-sessão, JWT, logout ou autorização.
+JWT. A sessão opaca é verificada no servidor, expira após 45 minutos de
+inatividade e é revogada no logout. Todas as rotas protegidas exigem
+`Authorization: Bearer <token>`; `X-User-Email` não autentica.
 
 ## Envio de e-mails
 
@@ -209,20 +262,34 @@ Consulte:
 ## Manual do enfermeiro
 
 O [Manual do Enfermeiro](docs/MANUAL_ENFERMEIRO.md) orienta o acesso, a consulta
-dos dados do doador e o fluxo previsto de avaliacao e finalizacao da triagem.
-O documento identifica as funcionalidades ainda pendentes e deve ser validado
-com as telas reais antes de sua distribuicao para uso em producao.
+dos dados do doador e o fluxo de avaliacao e finalizacao da triagem.
+Consulte [Visao do Enfermeiro](docs/VISAO_ENFERMEIRO.md) para migrations,
+autorizacao, endpoints, implantacao e limites da base de atendimento.
+
+Ordem dos scripts SQL no banco existente:
+
+1. [000_create_hemocentros.sql](sql/000_create_hemocentros.sql)
+2. [create_audit_logs.sql](sql/create_audit_logs.sql)
+3. [001_visao_enfermeiro.sql](sql/001_visao_enfermeiro.sql)
+
+Execute cada arquivo inteiro. O primeiro cria a tabela-base de hemocentros
+somente se ausente, sem inserir registros. Se a tabela estiver em outro schema,
+ajuste o `search_path` em vez de criar uma duplicata.
 
 ## Testes
 
-O teste atual verifica o endpoint de saude por HTTP. Como ele acessa o servidor
-local, inicie o Uvicorn em um terminal e execute o teste em outro:
+A suite principal utiliza bancos SQLite isolados:
 
 ```powershell
-python -m unittest discover -s tests
+$env:APP_ENV = "test"
+python -m pytest tests -q --ignore=tests\test_health.py
 ```
 
-Use `py -m unittest discover -s tests` caso o comando `python` nao esteja disponivel.
+O teste de saude acessa Uvicorn local na porta 8000 e e executado separadamente:
+
+```powershell
+python -m pytest tests\test_health.py -q
+```
 
 ## Estrutura
 
@@ -246,5 +313,6 @@ O backend ja contempla:
 - autenticacao com senha hash, fluxo 2FA por e-mail e reset de senha;
 - controles de seguranca de transporte e requisitos de criptografia/LGPD.
 
-Itens como jornada completa de agendamento e historico detalhado de doacoes
-podem evoluir em incrementos futuros.
+A base de atendimento tambem contempla agendamento, respostas de pre-triagem,
+recepcao e visao do enfermeiro com historico de triagens. Disponibilidade de
+vagas, coleta/doacao e visao medica permanecem fora deste incremento.

@@ -5,13 +5,11 @@
 Este manual orienta o profissional com perfil **ENFERMEIRO** no acompanhamento
 e registro da triagem de doadores.
 
-> **Situação do documento:** guia do fluxo previsto na especificação da Visão
-> do Enfermeiro. Na versão do backend analisada em 05/10/2026, os módulos de
-> triagem, pré-triagem, agendamento e histórico ainda não estão implementados,
-> e o frontend não está neste repositório. As instruções dessas etapas devem
-> ser validadas na aplicação entregue antes de utilizar este manual em produção.
-> Nomes de botões e status abaixo representam a especificação, não telas já
-> verificadas.
+> **Situação do documento:** manual da visão de enfermagem implementada em
+> 05/10/2026, com frontend no repositório `fe-hemo-connect`. A disponibilidade
+> depende da aplicação das migrations e da publicação conjunta dos dois projetos.
+> A instituição deve homologar o fluxo antes do uso em produção. Consulte
+> [implantação e limites da base](VISAO_ENFERMEIRO.md).
 
 Este documento explica o uso do sistema. Ele **não substitui protocolos
 institucionais, capacitação profissional ou avaliação clínica** e não define
@@ -21,7 +19,7 @@ critérios para considerar um doador apto ou inapto.
 
 Antes de começar, tenha:
 
-- uma conta pessoal ativa com perfil **ENFERMEIRO**, configurada pelo responsável;
+- uma conta pessoal aprovada e ativa com perfil **ENFERMEIRO**, vinculada ao seu hemocentro;
 - acesso ao e-mail cadastrado para receber o código de verificação;
 - o endereço oficial do Hemo Connect fornecido pela instituição;
 - autorização institucional para atender os doadores e consultar seus dados.
@@ -29,6 +27,27 @@ Antes de começar, tenha:
 Não utilize a conta de outro profissional. Se seu perfil estiver incorreto ou
 a área de enfermagem não estiver disponível, solicite orientação ao responsável
 pelo sistema; não tente acessar funcionalidades de outro perfil.
+
+### Solicitar seu cadastro
+
+1. Abra **Cadastro** e selecione **Enfermeiro(a)** no perfil de cadastro.
+2. Preencha seus dados pessoais, e-mail e senha.
+3. Informe o **número de inscrição do COREN**, somente com dígitos, e
+   selecione a **UF do registro**. Não inclua a sigla da UF no número.
+4. Leia a Política de Privacidade até o final e aceite o termo.
+5. Clique em **Cadastrar** e confira a confirmação de solicitação enviada.
+6. Aguarde a análise administrativa. A conta permanece **inativa** e o
+   login não é liberado enquanto a aprovação estiver pendente.
+7. O administrador confere seu registro e identidade e vincula sua conta
+   ao hemocentro autorizado. Após a aprovação, utilize o login com 2FA.
+
+O preenchimento do COREN **não comprova automaticamente sua habilitação**.
+Não há consulta automática ao conselho nem prazo de aprovação definido
+pelo sistema. Para acompanhar a solicitação ou corrigir uma informação,
+procure o responsável da instituição pelo canal oficial. Não envie senha
+ou códigos de verificação. Não há e-mail automático de aprovação.
+
+Contas de enfermagem já existentes não são desativadas por este novo fluxo.
 
 ## 2. Entrar no sistema
 
@@ -38,7 +57,7 @@ pelo sistema; não tente acessar funcionalidades de outro perfil.
 4. Consulte seu e-mail e localize o código de verificação de **seis dígitos**.
 5. Digite o código completo, incluindo eventuais zeros no início.
 6. Confirme a verificação.
-7. No fluxo previsto, você será direcionado à área de enfermagem.
+7. Você será direcionado à área de enfermagem conforme o perfil da sua conta.
 
 O código vale por **cinco minutos** e só pode ser utilizado uma vez. Um novo
 login gera outro código e invalida o anterior. Utilize o código mais recente.
@@ -59,7 +78,7 @@ Não compartilhe senha nem código de verificação.
 
 ## 3. Conhecer a área de enfermagem
 
-A área prevista apresenta a seção **Triagem de Doadores**. Seu fluxo de trabalho
+A área apresenta a seção **Triagem de Doadores**. Seu fluxo de trabalho
 é:
 
 **Consultar a fila → selecionar o doador → conferir os dados → consultar a
@@ -79,6 +98,9 @@ Quando disponíveis, o painel poderá apresentar:
 
 Considere os filtros e o período apresentados na tela. Um indicador ausente,
 em carregamento ou com erro **não significa que seu valor é zero**.
+
+Os indicadores contam todos os atendimentos do seu hemocentro; os filtros afetam
+somente a lista. Triagens concluídas inclui os encaminhamentos ao médico.
 
 ## 4. Consultar a lista de triagens
 
@@ -101,6 +123,9 @@ Se a tela oferecer busca, filtros ou paginação:
 Se aparecer **“Nenhuma triagem pendente”**, confira os filtros antes de concluir
 que não existem doadores aguardando atendimento. Uma mensagem de erro de
 carregamento não deve ser interpretada como fila vazia.
+
+A fila contém somente doadores cuja chegada foi confirmada pela recepção.
+O período dos filtros utiliza datas UTC, conforme indicado nos campos.
 
 ## 5. Conferir os dados do doador
 
@@ -160,9 +185,10 @@ sobrescrever o atendimento.
 
 Preencha somente os campos efetivamente apresentados no formulário.
 
-A especificação cita, como exemplos, observações, pressão arterial, frequência
-cardíaca, temperatura e peso. **A existência, obrigatoriedade, unidade e formato
-desses campos dependem da implementação e dos protocolos institucionais.**
+Nesta versão, o formulário disponibiliza **Observações** e **Resultado**.
+Não há campos estruturados de pressão arterial, frequência cardíaca, temperatura
+ou peso, nem critérios clínicos automáticos. Siga os protocolos institucionais
+para a avaliação e seu registro.
 
 Durante o preenchimento:
 
@@ -173,9 +199,10 @@ Durante o preenchimento:
 - não invente medidas, respostas, diagnósticos ou justificativas;
 - não inclua informações pessoais sem necessidade.
 
-Não presuma que o formulário salva automaticamente. Antes de sair da tela,
-confirme se existe uma ação de salvar e se houve confirmação de persistência.
-O fluxo especificado prevê a gravação da avaliação na finalização.
+Não há salvamento automático. Use **Salvar avaliação** para gravar as observações
+durante o atendimento e aguarde a confirmação. A finalização também grava as
+observações. Somente o enfermeiro que iniciou o atendimento pode salvar ou
+finalizar a avaliação; os demais têm acesso de consulta na sua unidade.
 
 ## 10. Selecionar o resultado
 
@@ -201,11 +228,9 @@ de outro profissional.
 | **APTO** | Resultado de aptidão registrado. |
 | **INAPTO** | Resultado de inaptidão registrado. |
 | **ENCAMINHADO_MEDICO** | Atendimento encaminhado para avaliação médica. |
-| **CONCLUIDO** | Etapa ou atendimento concluído conforme a regra adotada pelo sistema. |
 
-Esses nomes são referências da especificação. A aplicação pode reutilizar
-status equivalentes. **APTO** e **CONCLUIDO** não devem ser tratados como
-sinônimos sem confirmação do fluxo adotado.
+A conclusão da triagem é representada pelo resultado e pela data de finalização.
+Não existe um status separado **CONCLUIDO** nesta versão.
 
 ## 11. Finalizar a triagem
 
@@ -296,4 +321,4 @@ confirmando:
 - canal oficial de suporte.
 
 Enquanto essas verificações não forem concluídas, este documento permanece
-como **guia do fluxo previsto**, não como comprovação de funcionalidades entregues.
+pendente de **homologação institucional**, mesmo com o fluxo implementado.

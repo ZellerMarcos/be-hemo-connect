@@ -14,10 +14,10 @@ Este checklist organiza os requisitos de segurança implementados no backend do 
 | 1.6 — Validação do 2FA | Código validado quanto ao formato, validade, hash e expiração | Concluído |
 | 1.7 — Fluxo de autenticação | Login, emissão do 2FA, confirmação, sessão e logout | Concluído |
 | 1.8 — Duração da sessão | Controle de 45 minutos sem atividade válida | Concluído |
-| 1.9 — Invalidação da sessão | `last_activity_at` limpo durante o logout | Concluído |
+| 1.9 — Invalidação da sessão | Token revogado no servidor durante o logout | Concluído |
 | 1.10 — Proteção contra força bruta | 5 tentativas inválidas em 15 minutos bloqueiam a conta por 1 hora | Concluído |
 | 1.11 — Feedback de segurança | API informa tentativas restantes e situação de bloqueio | Concluído |
-| 1.12 — Rotas protegidas | Dependência `require_active_session` valida usuário e inatividade | Concluído |
+| 1.12 — Rotas protegidas | Dependência `require_active_session` valida token Bearer, usuário e inatividade; enfermagem valida perfil e unidade | Concluído |
 | 1.13 — Justificativas técnicas | Regras de autenticação descritas nas releases do requisito 1 | Concluído |
 
 ---
@@ -109,7 +109,7 @@ Este checklist organiza os requisitos de segurança implementados no backend do 
 
 ### Sessões e rotas protegidas
 
-- [x] Controle de atividade pelo campo `last_activity_at`
+- [x] Controle de atividade por sessão verificável no servidor
 - [x] Expiração após 45 minutos de inatividade
 - [x] Rejeição de requisições sem sessão válida
 - [x] Renovação da atividade em requisições protegidas
@@ -185,4 +185,5 @@ Esses arquivos descrevem o funcionamento, as regras de negócio, os endpoints, a
 
 O código-fonte, os testes e a documentação referentes aos requisitos estão organizados no repositório do backend.
 
-> Para execução em SQL Server, as colunas de sessão, bloqueio e a tabela de tokens devem existir no banco utilizado pelo ambiente.
+> Para implantação no PostgreSQL, aplique as migrations descritas em
+> [Visão do Enfermeiro](VISAO_ENFERMEIRO.md) antes de publicar backend e frontend.

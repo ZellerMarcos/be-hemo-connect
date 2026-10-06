@@ -1,8 +1,18 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.schemas.usuario import Perfil
+from app.schemas.usuario import CorenUF, Perfil, TipoSanguineo
+from app.schemas.triagem import RespostaPreTriagem, ResultadoTriagem
+
+
+class AtendimentoTitularResponse(BaseModel):
+    agendado_em: datetime
+    status: str
+    pre_triagem: list[RespostaPreTriagem]
+    observacoes: str | None
+    resultado: ResultadoTriagem | None
+    finalizada_em: datetime | None
 
 
 class ConsentimentoResponse(BaseModel):
@@ -35,6 +45,12 @@ class TitularDadosResponse(BaseModel):
     cpf: str
     email: EmailStr
     perfil: Perfil
+    data_nascimento: date | None
+    telefone: str | None
+    tipo_sanguineo: TipoSanguineo | None
+    coren_numero: str | None
+    coren_uf: CorenUF | None
+    atendimentos: list[AtendimentoTitularResponse]
     consentimentos: list[ConsentimentoResponse]
 
 

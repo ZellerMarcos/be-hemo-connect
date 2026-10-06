@@ -15,14 +15,13 @@ from app.models.usuario import Usuario
 from app.security.audit import registrar_evento
 from app.security.password import hash_password, verify_password
 from app.security.two_factor import generate_code, hash_code, verify_code
+from app.security.session import revoke_user_sessions
 from app.services.email import send_password_reset_email, send_two_factor_code
 
 
 logger = logging.getLogger(__name__)
 CODE_VALIDITY = timedelta(minutes=5)
 RESET_TOKEN_VALIDITY = timedelta(minutes=15)
-# A sessão do usuário considera o tempo sem atividade: 45 minutos sem requisição válida encerra a sessão.
-INACTIVITY_TIMEOUT = timedelta(minutes=45)
 # A proteção contra brute force considera até 5 erros em 15 minutos antes de bloquear a conta por 1 hora.
 FAILED_LOGIN_ATTEMPTS_LIMIT = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
@@ -33,7 +32,7 @@ def get_login_error_detail(db: Session, email: str) -> str:
     # Monta a mensagem mais útil possível para o cliente antes do bloqueio definitivo da conta.
     # A mensagem varia conforme o estado interno, mas nunca revela se a senha armazenada existe.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
-    if usuario is None or usuario.status != "ATIVO":
+    if usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         return "E-mail ou senha inválidos."
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -55,7 +54,7 @@ def get_login_error_detail(db: Session, email: str) -> str:
 def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
     # Primeiro passo do login: localiza o usuário pelo e-mail e valida status e senha.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
-    if usuario is None or usuario.status != "ATIVO":
+    if usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         registrar_evento(db, "login", "falha", ator=email, motivo="credenciais_invalidas")
         return None
 
@@ -105,51 +104,6 @@ def authenticate_user(db: Session, email: str, password: str) -> Usuario | None:
     usuario.locked_until = None
     db.commit()
     registrar_evento(db, "login", "sucesso", ator=email, user_id=usuario.id)
-    return usuario
-
-
-def update_last_activity(db: Session, email: str) -> Usuario | None:
-    # Atualiza a última atividade do usuário no banco para medir o tempo de inatividade.
-    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
-    if usuario is None:
-        return None
-    usuario.last_activity_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    db.commit()
-    # Este evento representa a criacao/renovacao da sessao; nao registra senha ou token de sessao.
-    registrar_evento(db, "sessao", "sucesso", ator=email, user_id=usuario.id, motivo="sessao_criada")
-    return usuario
-
-
-def validate_active_session(db: Session, email: str) -> Usuario:
-    # Valida se a sessão continua ativa e se o usuário não excedeu o limite de 45 minutos sem atividade.
-    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
-    if usuario is None or usuario.status != "ATIVO":
-        registrar_evento(db, "sessao", "falha", ator=email, motivo="sessao_invalida")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sessão inválida.",
-        )
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-    if usuario.last_activity_at is None:
-        # Primeira validação: marca a atividade atual para iniciar a contagem do timeout.
-        usuario.last_activity_at = now
-        db.commit()
-        # A primeira requisicao autenticada inicia o relogio sem criar um evento de login duplicado.
-        return usuario
-
-    if now - usuario.last_activity_at > INACTIVITY_TIMEOUT:
-        registrar_evento(db, "sessao", "falha", ator=email, user_id=usuario.id, motivo="inatividade")
-        # Quando o tempo de inatividade supera o limite, a API nega o acesso como se fosse logout.
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sessão expirada por inatividade.",
-        )
-
-    # Qualquer requisição válida renova a atividade para manter a sessão viva.
-    usuario.last_activity_at = now
-    db.commit()
-    # Renovacoes normais da sessao alteram apenas a atividade; eventos de falha sao registrados acima.
     return usuario
 
 
@@ -204,7 +158,7 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
 def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
     # Confere se o código enviado pelo usuário é o código válido e ainda não expirou.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
-    if usuario is None or usuario.status != "ATIVO":
+    if usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         registrar_evento(db, "2fa_validacao", "falha", ator=email, motivo="usuario_invalido")
         return False
 
@@ -228,7 +182,15 @@ def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
         return False
 
     # Marcar o registro como usado impede a reutilização do mesmo código.
-    two_factor_code.used_at = now
+    consumed = db.execute(update(TwoFactorCode).where(
+        TwoFactorCode.id == two_factor_code.id,
+        TwoFactorCode.used_at.is_(None),
+        TwoFactorCode.expires_at > now,
+    ).values(used_at=now))
+    if consumed.rowcount != 1:
+        db.rollback()
+        registrar_evento(db, "2fa_validacao", "falha", user_id=usuario.id, motivo="codigo_consumido")
+        return False
     db.commit()
     # O evento de sucesso so ocorre depois de consumir o desafio contra reutilizacao.
     registrar_evento(db, "2fa_validacao", "sucesso", ator=email, user_id=usuario.id)
@@ -251,7 +213,7 @@ def verify_reset_token(token: str, token_hash: str) -> bool:
 def request_password_reset(db: Session, email: str) -> bool:
     # O pedido registra sucesso/falha no fluxo de auditoria, mas nunca persiste o token bruto.
     usuario = db.scalar(select(Usuario).where(Usuario.email == email))
-    if usuario is None or usuario.status != "ATIVO":
+    if usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         # O aviso registra a tentativa operacional, enquanto a resposta externa permanece uniforme.
         logger.warning(
             "Usuário solicitou uma redefinição de senha | status=falha | email=%s",
@@ -340,7 +302,7 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
         )
 
     usuario = db.get(Usuario, db_token.usuario_id)
-    if usuario is None or usuario.status != "ATIVO":
+    if usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         # Um token ligado a conta inativa não pode alterar credenciais.
         logger.warning(
             "Reset de senha ou pedido mal sucedido | status=falha | motivo=usuário inválido ou inativo"
@@ -376,6 +338,8 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
 
     # A senha só é alterada depois que esta requisição assume o uso exclusivo do token.
     usuario.senha_hash = hash_password(new_password)
+    revoke_user_sessions(db, usuario.id)
+    usuario.last_activity_at = None
     db.commit()
     # O evento de sucesso permite auditar a operação sem registrar a nova senha ou o token.
     logger.info("Reset bem sucedido | status=sucesso | email=%s", usuario.email)

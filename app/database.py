@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_ROOT / ".env", override=True)
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 if os.getenv("APP_ENV") == "test":
     # Testes usam SQLite isolado para não depender de uma instância PostgreSQL externa.

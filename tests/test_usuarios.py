@@ -10,6 +10,7 @@ from app.main import app
 from app.models.hemocentro import Base
 from app.models.usuario import Usuario
 from app.security.password import hash_password, verify_password
+from tests.session_helpers import auth_headers
 
 
 engine = create_engine(
@@ -23,6 +24,7 @@ Base.metadata.create_all(engine)
 @pytest.fixture(autouse=True)
 def clean_database():
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["auth_sessions"].delete())
         session.execute(Base.metadata.tables["consentimentos"].delete())
         session.execute(Base.metadata.tables["usuarios"].delete())
         session.commit()
@@ -73,15 +75,21 @@ def payload(**overrides: object) -> dict[str, object]:
 
 
 def create_user(**overrides: object) -> dict[str, object]:
+    desired_status = overrides.pop("status", "ATIVO")
     response = client.post("/usuarios", json=payload(**overrides))
     assert response.status_code == 201
+    if desired_status != "ATIVO":
+        with Session(engine) as session:
+            usuario = session.get(Usuario, response.json()["id"])
+            usuario.status = desired_status
+            session.commit()
     return response.json()
 
 
 def test_list_users():
     create_user()
 
-    response = client.get("/usuarios", headers={"x-user-email": "joao@example.com"})
+    response = client.get("/usuarios", headers=auth_headers(engine))
 
     assert response.status_code == 200
     assert len(response.json()) == 1
@@ -92,7 +100,7 @@ def test_get_existing_user():
 
     response = client.get(
         f"/usuarios/{created['id']}",
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 200
@@ -100,7 +108,7 @@ def test_get_existing_user():
 
 
 def test_get_missing_user():
-    assert client.get("/usuarios/999", headers={"x-user-email": "joao@example.com"}).status_code == 401
+    assert client.get("/usuarios/999", headers=auth_headers(engine)).status_code == 401
 
 
 def test_create_user():
@@ -115,6 +123,12 @@ def test_create_user():
         "perfil",
         "status",
         "hemocentro_id",
+        "data_nascimento",
+        "telefone",
+        "tipo_sanguineo",
+        "coren_numero",
+        "coren_uf",
+        "aprovacao_pendente",
     }
     assert "senha_hash" not in response.json()
 
@@ -125,20 +139,20 @@ def test_update_user():
         nome="Maria Silva",
         cpf="10987654321",
         email="maria@example.com",
-        perfil="ENFERMEIRO",
-        status="INATIVO",
+        perfil="DOADOR",
+        status="ATIVO",
     )
     update.pop("senha")
 
     response = client.put(
         f"/usuarios/{created['id']}",
         json=update,
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 200
     assert response.json()["nome"] == "Maria Silva"
-    assert response.json()["perfil"] == "ENFERMEIRO"
+    assert response.json()["perfil"] == "DOADOR"
     assert "senha_hash" not in response.json()
 
 
@@ -147,13 +161,13 @@ def test_delete_user():
 
     response = client.delete(
         f"/usuarios/{created['id']}",
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 204
     assert client.get(
         f"/usuarios/{created['id']}",
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     ).status_code == 401
 
 

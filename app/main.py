@@ -14,10 +14,12 @@ from app.routes.auth import router as auth_router
 from app.routes.hemocentros import router as hemocentros_router
 from app.routes.privacidade import router as privacidade_router
 from app.routes.usuarios import router as usuarios_router
+from app.routes.triagens import router as triagens_router
+from app.routes.aprovacoes import router as aprovacoes_router
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_ROOT / ".env", override=True)
+load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 # Mantém os eventos de negócio INFO visíveis no terminal junto dos avisos do Uvicorn.
 # Os valores das variáveis de ambiente não são incluídos nessa configuração nem nas mensagens.
@@ -38,7 +40,7 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-User-Email"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 is_production = os.getenv("APP_ENV", "development").lower() == "production"
@@ -85,3 +87,5 @@ app.include_router(hemocentros_router)
 # Endpoints de privacidade LGPD (direitos do titular).
 app.include_router(privacidade_router)
 app.include_router(usuarios_router)
+app.include_router(triagens_router)
+app.include_router(aprovacoes_router)

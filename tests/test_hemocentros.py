@@ -9,6 +9,7 @@ from app.main import app
 from app.models.hemocentro import Base
 from app.models.usuario import Usuario
 from app.security.password import hash_password
+from tests.session_helpers import auth_headers
 
 
 engine = create_engine(
@@ -31,6 +32,7 @@ client = TestClient(app)
 def isolate_test_database():
     app.dependency_overrides[get_db] = override_get_db
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["auth_sessions"].delete())
         session.execute(Base.metadata.tables["audit_logs"].delete())
         session.execute(Base.metadata.tables["hemocentros"].delete())
         session.execute(Base.metadata.tables["usuarios"].delete())
@@ -40,7 +42,7 @@ def isolate_test_database():
                 cpf="12345678901",
                 email="joao@example.com",
                 senha_hash=hash_password("SenhaSegura123!"),
-                perfil="DOADOR",
+                perfil="ADMINISTRADOR",
                 status="ATIVO",
             )
         )
@@ -62,10 +64,10 @@ def test_list_hemocentros():
     client.post(
         "/hemocentros",
         json=payload(),
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
-    response = client.get("/hemocentros", headers={"x-user-email": "joao@example.com"})
+    response = client.get("/hemocentros", headers=auth_headers(engine))
 
     assert response.status_code == 200
     assert len(response.json()) == 1
@@ -75,12 +77,12 @@ def test_get_hemocentro():
     created = client.post(
         "/hemocentros",
         json=payload(),
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     ).json()
 
     response = client.get(
         f"/hemocentros/{created['id']}",
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 200
@@ -91,7 +93,7 @@ def test_create_hemocentro():
     response = client.post(
         "/hemocentros",
         json=payload(),
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 201
@@ -103,7 +105,7 @@ def test_update_hemocentro():
     created = client.post(
         "/hemocentros",
         json=payload(),
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     ).json()
     updated = payload("Hemocentro Zona Norte")
     updated["status"] = "INATIVO"
@@ -111,7 +113,7 @@ def test_update_hemocentro():
     response = client.put(
         f"/hemocentros/{created['id']}",
         json=updated,
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 200
@@ -123,18 +125,18 @@ def test_delete_hemocentro():
     created = client.post(
         "/hemocentros",
         json=payload(),
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     ).json()
 
     response = client.delete(
         f"/hemocentros/{created['id']}",
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 204
     assert client.get(
         f"/hemocentros/{created['id']}",
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     ).status_code == 404
 
 
@@ -145,7 +147,7 @@ def test_invalid_status():
     response = client.post(
         "/hemocentros",
         json=invalid,
-        headers={"x-user-email": "joao@example.com"},
+        headers=auth_headers(engine),
     )
 
     assert response.status_code == 422
@@ -154,7 +156,7 @@ def test_invalid_status():
 @pytest.mark.parametrize("method", ["get", "put", "delete"])
 def test_missing_hemocentro(method: str):
     request = getattr(client, method)
-    kwargs = {"json": payload(), "headers": {"x-user-email": "joao@example.com"}} if method == "put" else {"headers": {"x-user-email": "joao@example.com"}}
+    kwargs = {"json": payload(), "headers": auth_headers(engine)} if method == "put" else {"headers": auth_headers(engine)}
 
     response = request("/hemocentros/999", **kwargs)
 

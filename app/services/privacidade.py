@@ -11,7 +11,9 @@ from app.models.consentimento import Consentimento
 from app.models.password_reset_token import PasswordResetToken
 from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
+from app.models.triagem import Agendamento, Triagem
 from app.security.password import hash_password
+from app.security.session import revoke_user_sessions
 
 
 BASE_LEGAL_PADRAO = "Execucao de contrato e seguranca da informacao"
@@ -119,6 +121,9 @@ def revogar_consentimento(db: Session, usuario_id: int, finalidade: str) -> Cons
 def montar_dados_titular(db: Session, usuario: Usuario) -> dict[str, object]:
     # Monta o payload consolidado para consulta e exportacao de dados do titular.
     consentimentos = listar_consentimentos(db, usuario.id)
+    atendimentos = db.execute(select(Agendamento, Triagem).outerjoin(
+        Triagem, Triagem.agendamento_id == Agendamento.id
+    ).where(Agendamento.doador_id == usuario.id).order_by(Agendamento.agendado_em.desc())).all()
     return {
         "id": usuario.id,
         "nome": usuario.nome,
@@ -127,6 +132,19 @@ def montar_dados_titular(db: Session, usuario: Usuario) -> dict[str, object]:
         "perfil": usuario.perfil,
         "status": usuario.status,
         "hemocentro_id": usuario.hemocentro_id,
+        "data_nascimento": usuario.data_nascimento,
+        "telefone": usuario.telefone,
+        "tipo_sanguineo": usuario.tipo_sanguineo,
+        "coren_numero": usuario.coren_numero,
+        "coren_uf": usuario.coren_uf,
+        "atendimentos": [{
+            "agendado_em": agenda.agendado_em,
+            "status": agenda.status,
+            "pre_triagem": agenda.respostas_pre_triagem,
+            "observacoes": avaliacao.observacoes if avaliacao else None,
+            "resultado": avaliacao.resultado if avaliacao else None,
+            "finalizada_em": avaliacao.finalizada_em if avaliacao else None,
+        } for agenda, avaliacao in atendimentos],
         "consentimentos": consentimentos,
     }
 
@@ -141,12 +159,23 @@ def excluir_dados_titular(db: Session, usuario: Usuario) -> None:
     usuario.nome = "Titular removido"
     usuario.cpf = f"{usuario.id:011d}"
     usuario.email = f"deleted_{suffix}@example.invalid"
+    usuario.data_nascimento = None
+    usuario.telefone = None
+    usuario.tipo_sanguineo = None
+    usuario.coren_numero = None
+    usuario.coren_uf = None
+    usuario.aprovacao_pendente = False
+    usuario.aprovado_em = None
+    usuario.aprovado_por = None
     usuario.senha_hash = hash_password(secrets.token_urlsafe(32))
     usuario.status = "INATIVO"
     usuario.last_activity_at = None
     usuario.failed_login_attempts = 0
     usuario.failed_login_window_started_at = None
     usuario.locked_until = None
+    revoke_user_sessions(db, usuario.id)
+    for agenda in db.scalars(select(Agendamento).where(Agendamento.doador_id == usuario.id)).all():
+        agenda.respostas_pre_triagem = []
 
     codigos_ativos = db.scalars(
         select(TwoFactorCode).where(
