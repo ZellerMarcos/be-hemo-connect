@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,7 @@ from app.database import get_db
 from app.main import app
 from app.models import Agendamento, AuditLog, AuthSession, Hemocentro, Triagem, Usuario
 from app.models.hemocentro import Base
+from app.models.agenda import AgendaHemocentro
 from app.security.audit import verificar_integridade
 from app.security.password import hash_password
 from app.security.session import issue_session, utcnow
@@ -26,6 +28,13 @@ def context(tmp_path):
         db.add_all([Hemocentro(id=1, nome="Centro", endereco="Endereço", telefone="123", status="ATIVO"),
                     Hemocentro(id=2, nome="Outra unidade", endereco="Endereço", telefone="456", status="ATIVO")])
         db.flush()
+        db.add_all([AgendaHemocentro(
+            hemocentro_id=centro_id, fuso_horario="UTC", duracao_minutos=30,
+            capacidade=100, antecedencia_minutos=0, horizonte_dias=30,
+            cancelamento_minutos=0, remarcacao_minutos=0, publicada=True, versao=1,
+            periodos=[{"dia_semana": day, "inicio": "00:00", "fim": "23:30"} for day in range(7)],
+            excecoes=[],
+        ) for centro_id in (1, 2)])
         password_hash = hash_password("SenhaSegura123!")
         for index, (key, perfil, centro) in enumerate([
             ("doador", "DOADOR", None), ("outro_doador", "DOADOR", None),
@@ -54,9 +63,15 @@ def context(tmp_path):
 
 def agendar(context, centro=1, donor="doador"):
     client, _, headers, _ = context
+    day = (utcnow() + timedelta(days=1)).date().isoformat()
+    slots = client.get(f"/hemocentros/{centro}/disponibilidade?inicio={day}&fim={day}",
+                       headers=headers[donor]).json()["dias"][0]["horarios"]
+    existing = client.get("/agendamentos/me", headers=headers[donor]).json()
+    used = {row["agendado_em"] for row in existing if row["status"] != "CANCELADO"}
+    slot = next(row for row in slots if row["inicio"] not in used)
     response = client.post("/agendamentos", headers=headers[donor], json={
-        "hemocentro_id": centro,
-        "agendado_em": (utcnow() + timedelta(days=1)).isoformat() + "Z",
+        "horario_id": slot["id"],
+        "chave_requisicao": str(uuid4()),
         "respostas_pre_triagem": [{"pergunta": "Pergunta institucional", "resposta": "Resposta registrada"}],
     })
     assert response.status_code == 201, response.text
@@ -67,7 +82,7 @@ def receber(context):
     client, _, headers, _ = context
     agenda_id = agendar(context)
     assert client.post(f"/recepcao/agendamentos/{agenda_id}/receber",
-                       headers=headers["recepcao"]).status_code == 200
+                       headers=headers["recepcao"], json={"versao": 1}).status_code == 200
     return agenda_id
 
 
@@ -127,7 +142,7 @@ def test_isolamento_por_hemocentro_e_por_doador(context):
     assert client.get("/triagens", headers=headers["sem_vinculo"]).status_code == 403
     assert client.get("/agendamentos/me", headers=headers["outro_doador"]).json() == []
     assert client.post(f"/recepcao/agendamentos/{agendar(context, centro=2)}/receber",
-                       headers=headers["recepcao"]).status_code == 404
+                       headers=headers["recepcao"], json={"versao": 1}).status_code == 404
 
 
 def test_nao_permite_falsificar_identidade(context):
@@ -288,8 +303,8 @@ def test_validacao_agendamento_e_recepcao(context):
     agenda_id = agendar(context)
     assert client.post(f"/triagens/{agenda_id}/iniciar", headers=headers["enfermeiro"]).status_code == 409
     assert client.post(f"/recepcao/agendamentos/{agenda_id}/receber",
-                       headers=headers["enfermeiro"]).status_code == 403
+                       headers=headers["enfermeiro"], json={"versao": 1}).status_code == 403
     assert client.post(f"/recepcao/agendamentos/{agenda_id}/receber",
-                       headers=headers["recepcao"]).status_code == 200
+                       headers=headers["recepcao"], json={"versao": 1}).status_code == 200
     assert client.post(f"/recepcao/agendamentos/{agenda_id}/receber",
-                       headers=headers["recepcao"]).status_code == 409
+                       headers=headers["recepcao"], json={"versao": 1}).status_code == 409

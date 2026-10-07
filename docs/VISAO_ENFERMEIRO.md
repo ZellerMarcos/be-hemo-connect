@@ -23,8 +23,13 @@ Não há registros fictícios nem avaliação clínica automática.
 4. Aplique [`001_visao_enfermeiro.sql`](../sql/001_visao_enfermeiro.sql).
    Depois aplique [`002_cadastro_enfermeiro_coren.sql`](../sql/002_cadastro_enfermeiro_coren.sql)
    antes de publicar o cadastro e o painel de aprovação.
+   Para agenda e reserva de vagas, aplique também
+   [`003_agenda_reservas.sql`](../sql/003_agenda_reservas.sql) e restaure as
+   dependências, incluindo `tzdata`. Revise e publique uma agenda compatível
+   com as reservas antigas; os conflitos impedem salvar, sem apagar reservas.
 5. Publique backend e frontend juntos: clientes antigos que enviam
    `X-User-Email` deixam de autenticar e precisam efetuar um novo login.
+   Reservas agora exigem horário/UUID; a recepção envia a versão exibida na lista.
 6. Configure `DATABASE_URL`, `FRONTEND_URL`, `APP_ENV=production`, `BREVO_API_KEY`,
    `MAIL_FROM` e `MAIL_FROM_NAME`. O frontend utiliza `VITE_API_URL`.
 7. Use uma conta administrativa já existente, autenticada após o 2FA, para
@@ -122,11 +127,15 @@ a **triagens finalizadas**, sem simular coleta ou doação.
 | POST | `/triagens/{id}/iniciar` | Enfermeiro: assumir atendimento pendente. |
 | PUT | `/triagens/{id}` | Enfermeiro responsável: salvar observações sem finalizar. |
 | POST | `/triagens/{id}/finalizar` | Enfermeiro responsável: observações e resultado. |
-| POST | `/agendamentos` | Doador: registrar agendamento e respostas institucionais. |
+| GET/PUT | `/hemocentros/{id}/agenda` | Administrador ou responsável da própria unidade: configurar/publicar agenda. |
+| GET | `/hemocentros/{id}/disponibilidade` | Autenticado, incluindo enfermeiro: consultar horários e vagas. |
+| POST | `/agendamentos` | Doador: reservar horário disponível, com UUID e respostas institucionais opcionais. |
+| POST | `/agendamentos/{id}/cancelar` | Doador: cancelar reserva própria pendente, dentro do prazo, com versão e UUID. |
+| POST | `/agendamentos/{id}/remarcar` | Doador: trocar o horário na mesma unidade, dentro do prazo, com versão e UUID. |
 | GET | `/agendamentos/me` | Doador: seus próprios agendamentos. |
 | GET | `/historico/me` | Doador: suas próprias triagens finalizadas. |
 | GET | `/recepcao/agendamentos` | Recepção autorizada: agendamentos aguardando chegada. |
-| POST | `/recepcao/agendamentos/{id}/receber` | Recepção autorizada: confirmar chegada. |
+| POST | `/recepcao/agendamentos/{id}/receber` | Recepção autorizada: confirmar chegada enviando `{"versao": 1}` com a versão atual da lista. |
 
 ### Conferência e aprovação de cadastro
 
@@ -159,7 +168,8 @@ Não há rejeição no painel nem notificação automática por e-mail.
 
 O `{id}` das rotas de enfermagem identifica o **agendamento/atendimento**.
 Os status são `AGENDADO`, `AGUARDANDO_TRIAGEM`, `EM_TRIAGEM`, `APTO`, `INAPTO`
-e `ENCAMINHADO_MEDICO`. Não foi criado `CONCLUIDO`, pois a conclusão já é
+e `ENCAMINHADO_MEDICO`, além de `CANCELADO` nas reservas. Cancelados ficam fora
+das filas e dos detalhes de enfermagem. Não foi criado `CONCLUIDO`, pois a conclusão já é
 representada pelo resultado e por `finalizada_em`.
 
 A fila aceita `busca` (nome ou dígitos de CPF), `status`, `inicio`, `fim`,
@@ -204,7 +214,9 @@ transacional serializa o encadeamento dos hashes entre processos.
 
 A exclusão de conta preserva vínculos de atendimento/autoria, anonimiza o
 cadastro, apaga os novos campos pessoais e respostas de pré-triagem e revoga
-sessões. Registros de avaliação e auditoria não são apagados automaticamente:
+sessões. Reservas futuras ainda pendentes são canceladas para liberar vagas.
+O histórico de alterações de agendamento integra a consulta e exportação LGPD.
+Registros de avaliação e auditoria não são apagados automaticamente:
 a instituição deve definir retenção, base legal e tratamento de texto livre
 que possa conter dados pessoais antes do uso com dados reais.
 
@@ -216,8 +228,10 @@ que possa conter dados pessoais antes do uso com dados reais.
 - A avaliação contém observações e resultado. Pressão, frequência cardíaca,
   temperatura e peso não foram criados como campos clínicos estruturados:
   dependem de definição institucional.
-- Agendamento registra uma data futura com fuso, combinada com a unidade;
-  não implementa capacidade, disponibilidade, cancelamento ou remarcação.
+- Agendamento reserva um horário de agenda publicada com capacidade revalidada
+  na confirmação. Cancelamento/remarcação exigem reserva pendente e prazo válido.
+  A remarcação permanece restrita à mesma unidade; não há lembretes automáticos.
+  A gestão da agenda cabe ao administrador/responsável, não ao enfermeiro.
 - A recepção confirma a chegada; não implementa um módulo administrativo completo.
 - Encaminhamento médico fica registrado e visível, mas a visão médica ainda
   não foi implementada.
@@ -248,6 +262,10 @@ npm.cmd run lint
 
 O teste de saúde separado exige Uvicorn local. As migrations PostgreSQL e o
 envio real de e-mail precisam de validação no ambiente de homologação.
+Os testes específicos de concorrência e upgrade da agenda estão em
+`tests/test_agenda_postgres.py` e exigem `TEST_POSTGRES_URL` para um banco isolado,
+com permissão para criar schemas. Sem essa variável, são ignorados; não há
+fallback para o banco real. Consulte as instruções no [README](../README.md).
 
 ### Resultados verificados nesta entrega
 

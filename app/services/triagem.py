@@ -4,7 +4,6 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.models.hemocentro import Hemocentro
 from app.models.triagem import Agendamento, Triagem
 from app.models.usuario import Usuario
 from app.schemas.triagem import (
@@ -14,6 +13,8 @@ from app.schemas.triagem import (
 from app.security.audit import registrar_evento
 from app.security.authorization import require_hemocentro
 from app.security.session import utcnow
+from app.services.agenda import reservar
+from app.schemas.agenda import ReservaResponse
 
 
 FINAL_STATUSES = ("APTO", "INAPTO", "ENCAMINHADO_MEDICO")
@@ -31,25 +32,8 @@ def get_scoped_agendamento(db: Session, usuario: Usuario, agendamento_id: int) -
     return agendamento
 
 
-def create_agendamento(db: Session, usuario: Usuario, data: AgendamentoCreate) -> Agendamento:
-    centro = db.get(Hemocentro, data.hemocentro_id)
-    if centro is None or centro.status != "ATIVO":
-        raise HTTPException(422, "Hemocentro indisponível.")
-    if data.agendado_em <= utcnow():
-        raise HTTPException(422, "O agendamento deve ser para uma data futura.")
-    agendamento = Agendamento(
-        doador_id=usuario.id,
-        hemocentro_id=data.hemocentro_id,
-        agendado_em=data.agendado_em,
-        respostas_pre_triagem=[resposta.model_dump() for resposta in data.respostas_pre_triagem],
-        criado_em=utcnow(),
-        status="AGENDADO",
-    )
-    db.add(agendamento)
-    db.flush()
-    registrar_evento(db, "AGENDAMENTO_CRIADO", "sucesso", user_id=usuario.id, atendimento_id=agendamento.id)
-    db.refresh(agendamento)
-    return agendamento
+def create_agendamento(db: Session, usuario: Usuario, data: AgendamentoCreate) -> ReservaResponse:
+    return reservar(db, usuario, data)
 
 
 def query_fila(usuario: Usuario, *, status: str | None = None, busca: str | None = None,
@@ -61,7 +45,7 @@ def query_fila(usuario: Usuario, *, status: str | None = None, busca: str | None
         query = query.where(Agendamento.hemocentro_id == require_hemocentro(usuario))
     query = query.where(Usuario.status == "ATIVO")
     if not recepcao:
-        query = query.where(Agendamento.status != "AGENDADO")
+        query = query.where(Agendamento.status.not_in(("AGENDADO", "CANCELADO")))
     if status:
         query = query.where(Agendamento.status == status)
     if busca:
@@ -86,7 +70,10 @@ def list_fila(db: Session, usuario: Usuario, pagina: int, tamanho: int, **filter
     rows = db.execute(query.order_by(Agendamento.agendado_em, Agendamento.id)
                       .offset((pagina - 1) * tamanho).limit(tamanho)).all()
     itens = [FilaItem(
-        **{key: getattr(agenda, key) for key in ("id", "hemocentro_id", "agendado_em", "status", "recebido_em")},
+        **{key: getattr(agenda, key) for key in (
+            "id", "hemocentro_id", "agendado_em", "status", "recebido_em",
+            "horario_id", "versao", "cancelavel_ate", "remarcavel_ate", "cancelado_em",
+        )},
         nome=doador.nome,
         cpf_mascarado=f"***.***.{doador.cpf[6:9]}-{doador.cpf[9:]}",
         tipo_sanguineo=doador.tipo_sanguineo,
@@ -123,7 +110,7 @@ def historico(db: Session, usuario: Usuario, doador_id: int) -> list[HistoricoIt
 
 def detalhe(db: Session, usuario: Usuario, agendamento_id: int) -> TriagemDetalhe:
     agenda = get_scoped_agendamento(db, usuario, agendamento_id)
-    if agenda.status == "AGENDADO":
+    if agenda.status in ("AGENDADO", "CANCELADO"):
         raise HTTPException(409, "O atendimento ainda não foi recebido.")
     doador = db.get(Usuario, agenda.doador_id)
     if doador is None or doador.status != "ATIVO":
@@ -138,14 +125,16 @@ def detalhe(db: Session, usuario: Usuario, agendamento_id: int) -> TriagemDetalh
     )
 
 
-def receber(db: Session, usuario: Usuario, agendamento_id: int) -> Agendamento:
+def receber(db: Session, usuario: Usuario, agendamento_id: int, versao: int) -> Agendamento:
     agenda = get_scoped_agendamento(db, usuario, agendamento_id)
     doador = db.get(Usuario, agenda.doador_id)
     if doador is None or doador.status != "ATIVO":
         raise HTTPException(409, "Doador indisponível para atendimento.")
     changed = db.execute(update(Agendamento).where(
-        Agendamento.id == agenda.id, Agendamento.status == "AGENDADO"
-    ).values(status="AGUARDANDO_TRIAGEM", recebido_em=utcnow(), recebido_por=usuario.id))
+        Agendamento.id == agenda.id, Agendamento.status == "AGENDADO",
+        Agendamento.versao == versao,
+    ).values(status="AGUARDANDO_TRIAGEM", recebido_em=utcnow(), recebido_por=usuario.id,
+             versao=Agendamento.versao + 1))
     if changed.rowcount != 1:
         db.rollback()
         raise HTTPException(409, "A chegada já foi confirmada ou o atendimento mudou.")

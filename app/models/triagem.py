@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.hemocentro import Base
@@ -8,6 +8,12 @@ from app.models.hemocentro import Base
 
 class Agendamento(Base):
     __tablename__ = "agendamentos"
+    __table_args__ = (
+        UniqueConstraint("doador_id", "chave_requisicao", name="uq_reserva_requisicao"),
+        Index("uq_reserva_ativa_doador_horario", "doador_id", "horario_id", unique=True,
+              postgresql_where=text("horario_id IS NOT NULL AND status <> 'CANCELADO'"),
+              sqlite_where=text("horario_id IS NOT NULL AND status <> 'CANCELADO'")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     doador_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), index=True)
@@ -18,6 +24,12 @@ class Agendamento(Base):
     recebido_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     recebido_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime)
+    horario_id: Mapped[int | None] = mapped_column(ForeignKey("horarios_agenda.id"), nullable=True, index=True)
+    chave_requisicao: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    versao: Mapped[int] = mapped_column(default=1)
+    cancelavel_ate: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    remarcavel_ate: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelado_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class Triagem(Base):

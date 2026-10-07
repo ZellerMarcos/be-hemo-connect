@@ -6,6 +6,7 @@ from app.models.consentimento import Consentimento
 from app.models.audit_log import AuditLog
 from app.models.auth_session import AuthSession
 from app.models.triagem import Agendamento, Triagem
+from app.models.agenda import AgendaHemocentro, HorarioAgenda, AlteracaoAgendamento
 
 # Exporta todos os modelos persistidos, incluindo consentimento LGPD por finalidade.
-__all__ = ["Hemocentro", "Usuario", "TwoFactorCode", "PasswordResetToken", "Consentimento", "AuditLog", "AuthSession", "Agendamento", "Triagem"]
+__all__ = ["Hemocentro", "Usuario", "TwoFactorCode", "PasswordResetToken", "Consentimento", "AuditLog", "AuthSession", "Agendamento", "Triagem", "AgendaHemocentro", "HorarioAgenda", "AlteracaoAgendamento"]

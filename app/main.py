@@ -16,6 +16,7 @@ from app.routes.privacidade import router as privacidade_router
 from app.routes.usuarios import router as usuarios_router
 from app.routes.triagens import router as triagens_router
 from app.routes.aprovacoes import router as aprovacoes_router
+from app.routes.agenda import router as agenda_router
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -89,3 +90,4 @@ app.include_router(privacidade_router)
 app.include_router(usuarios_router)
 app.include_router(triagens_router)
 app.include_router(aprovacoes_router)
+app.include_router(agenda_router)

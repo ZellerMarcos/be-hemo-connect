@@ -102,6 +102,21 @@ em carregamento ou com erro **não significa que seu valor é zero**.
 Os indicadores contam todos os atendimentos do seu hemocentro; os filtros afetam
 somente a lista. Triagens concluídas inclui os encaminhamentos ao médico.
 
+### Consultar horários dos hemocentros
+
+No cabeçalho, abra **Hemocentros** e use **Consultar horários** na unidade.
+A consulta informa datas, horários, vagas e fuso da unidade. Sem agenda publicada,
+não há vagas para reservar pela aplicação. O cadastro de uma nova unidade não
+publica sua agenda: procure o administrador ou responsável institucional para
+configurar expediente, capacidade, exceções e prazos em **Gerenciar agendas**.
+O perfil de enfermagem consulta, mas não edita essa configuração.
+
+O doador reserva, cancela e remarca em **Agendamentos**, conforme os prazos
+informados. Cancelados não aparecem na recepção nem na fila de triagem.
+Depois da confirmação de chegada, essas alterações não são permitidas ao doador.
+Se a recepção informar que o atendimento mudou, atualize a lista e confira o
+horário novamente antes de confirmar a chegada.
+
 ## 4. Consultar a lista de triagens
 
 1. Abra a lista de triagens na área de enfermagem.

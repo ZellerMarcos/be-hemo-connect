@@ -1,7 +1,8 @@
 from datetime import date, datetime, timezone
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 TriagemStatus = Literal["AGUARDANDO_TRIAGEM", "EM_TRIAGEM", "APTO", "INAPTO", "ENCAMINHADO_MEDICO"]
@@ -16,16 +17,14 @@ class RespostaPreTriagem(BaseModel):
 
 class AgendamentoCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    hemocentro_id: int = Field(gt=0)
-    agendado_em: datetime
+    horario_id: int = Field(gt=0)
+    chave_requisicao: UUID
     respostas_pre_triagem: list[RespostaPreTriagem] = Field(default_factory=list, max_length=100)
 
-    @field_validator("agendado_em")
-    @classmethod
-    def normalize_time(cls, value: datetime) -> datetime:
-        if value.tzinfo is None:
-            raise ValueError("Informe data/hora com fuso horário.")
-        return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+class ConfirmarChegada(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    versao: int = Field(ge=1)
 
 
 class AgendamentoResponse(BaseModel):
@@ -35,6 +34,15 @@ class AgendamentoResponse(BaseModel):
     agendado_em: datetime
     status: str
     recebido_em: datetime | None
+    horario_id: int | None
+    versao: int
+    cancelavel_ate: datetime | None
+    remarcavel_ate: datetime | None
+    cancelado_em: datetime | None
+
+    @field_serializer("agendado_em", "recebido_em", "cancelavel_ate", "remarcavel_ate", "cancelado_em")
+    def utc_timestamp(self, value: datetime | None) -> str | None:
+        return value.replace(tzinfo=timezone.utc).isoformat() if value else None
 
 
 class FilaItem(AgendamentoResponse):

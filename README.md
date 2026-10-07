@@ -2,7 +2,7 @@
 
 Backend do Hemo Connect, uma plataforma para facilitar o agendamento de doacoes,
 aproximar doadores dos hemocentros e incentivar uma frequencia maior de doacoes.
-Nesta etapa, fornece uma API simples para verificar se o servico esta funcionando.
+Inclui autenticacao, agendas por unidade, reservas de vagas e atendimento.
 
 ## Sumario
 
@@ -282,10 +282,66 @@ Ordem dos scripts SQL no banco existente:
 1. [000_create_hemocentros.sql](sql/000_create_hemocentros.sql)
 2. [create_audit_logs.sql](sql/create_audit_logs.sql)
 3. [001_visao_enfermeiro.sql](sql/001_visao_enfermeiro.sql)
+4. [002_cadastro_enfermeiro_coren.sql](sql/002_cadastro_enfermeiro_coren.sql)
+5. [003_agenda_reservas.sql](sql/003_agenda_reservas.sql)
 
 Execute cada arquivo inteiro. O primeiro cria a tabela-base de hemocentros
 somente se ausente, sem inserir registros. Se a tabela estiver em outro schema,
 ajuste o `search_path` em vez de criar uma duplicata.
+
+## Agenda e reservas de vagas
+
+Administradores configuram qualquer unidade; `RESPONSAVEL_HEMOCENTRO` configura
+somente a propria. Enfermeiros consultam os horarios e continuam podendo cadastrar
+hemocentros, mas nao publicam agendas. Criar uma unidade nao abre vagas automaticamente.
+
+A agenda define fuso IANA (ex.: `America/Sao_Paulo`), duracao, capacidade por horario,
+periodos semanais, excecoes por data, antecedencia minima, horizonte e prazos para
+cancelamento/remarcacao. Uma excecao substitui o expediente daquele dia; periodos
+vazios fecham a data. Os intervalos nao podem se sobrepor e precisam comportar
+horarios completos. Horarios locais ambiguos ou inexistentes por mudanca de fuso
+sao omitidos com aviso. E necessario salvar a agenda como publicada para reservar.
+
+| Metodo | Rota | Finalidade |
+| --- | --- | --- |
+| GET/PUT | `/hemocentros/{id}/agenda` | Gestor autorizado: consultar/configurar agenda com `versao`. |
+| GET | `/hemocentros/{id}/disponibilidade?inicio=&fim=` | Usuario autenticado: vagas por data local da unidade. Janela padrao de 7 dias, maxima de 31. |
+| POST | `/agendamentos` | Doador: reservar `horario_id`, `chave_requisicao` UUID e respostas opcionais. |
+| GET | `/agendamentos/me` | Reservas proprias, prazos, acoes permitidas e historico de alteracoes. |
+| POST | `/agendamentos/{id}/cancelar` | Doador: `versao` e `chave_requisicao` UUID. |
+| POST | `/agendamentos/{id}/remarcar` | Doador: mesmos campos mais `horario_id` da mesma unidade. |
+| POST | `/recepcao/agendamentos/{id}/receber` | Recepcao autorizada: `versao` exibida na lista, para rejeitar reservas desatualizadas. |
+
+O POST de reserva nao aceita mais uma data arbitraria nem `hemocentro_id`: o
+horario escolhido identifica a unidade. Publique frontend/backend juntos.
+Respostas usam timestamps UTC explicitos; a interface apresenta o fuso da unidade.
+Prazos sao preservados na reserva mesmo se a politica mudar; no instante exato
+do limite, a alteracao ja nao e permitida. A remarcacao e restrita a mesma unidade
+neste MVP e preserva a vaga original quando o destino falha.
+
+A disponibilidade e informativa ate a confirmacao: a transacao revalida a vaga,
+capacidade, publicacao e conflitos do doador. Em PostgreSQL, bloqueios por unidade
+e doador serializam reservas concorrentes. Repetir uma requisicao com o mesmo UUID
+e dados nao duplica a operacao; reutilizar a chave com dados diferentes retorna
+`409`. Uma versao desatualizada tambem retorna `409` e exige atualizar a consulta.
+Cancelamento preserva o registro, grava `CANCELADO` e libera capacidade; cancelados
+nao entram na recepcao/enfermagem. Chegada confirmada impede alteracoes pelo doador.
+O historico integra a consulta/exportacao LGPD. A anonimizacao cancela reservas
+futuras ainda pendentes para liberar as vagas, sem apagar o historico clinico.
+
+### Implantacao e reservas existentes
+
+Restaure as dependencias de `requirements.txt` (incluindo `tzdata`) e aplique
+a migration 003 inteira em homologacao, com backup e schema correto, antes do deploy.
+A aplicacao nao aplica migrations automaticamente. A migration e aditiva e
+preserva as datas UTC e os registros antigos; nao publica agendas ficticias.
+
+Antes de publicar, revise as pendencias legadas no editor. Salvar uma configuracao
+compativel vincula as reservas futuras aos horarios e registra a conciliacao.
+Datas fora do expediente, conflitos ou capacidade insuficiente impedem salvar,
+com identificacao do agendamento; nenhuma reserva e cancelada silenciosamente.
+Suspender a publicacao impede novas reservas, sem cancelar as existentes.
+Unidades com agendamentos nao podem ser excluidas.
 
 ## Testes
 
@@ -301,6 +357,22 @@ O teste de saude acessa Uvicorn local na porta 8000 e e executado separadamente:
 ```powershell
 python -m pytest tests\test_health.py -q
 ```
+
+Para outra porta, defina `HEALTH_URL`, por exemplo `http://127.0.0.1:8001/health`.
+Os testes de agenda SQLite cobrem capacidade, idempotencia, prazos exatos,
+remarcacao, conciliacao, permissoes, privacidade e integracao com a recepcao.
+Para validar concorrencia e upgrade da migration no PostgreSQL, use exclusivamente
+um banco de testes isolado:
+
+```powershell
+$env:TEST_POSTGRES_URL = "postgresql+psycopg://usuario:senha@localhost/hemo_test"
+python -m pytest tests\test_agenda_postgres.py -q
+```
+
+A conta precisa poder criar schemas. A fixture cria um schema aleatorio exclusivo
+e remove somente esse schema no final; nunca usa `DATABASE_URL` como fallback.
+Sem `TEST_POSTGRES_URL`, esses testes sao ignorados. SQLite nao comprova a
+seguranca de concorrencia ou o upgrade em PostgreSQL: execute-os antes da producao.
 
 ## Estrutura
 
@@ -324,6 +396,6 @@ O backend ja contempla:
 - autenticacao com senha hash, fluxo 2FA por e-mail e reset de senha;
 - controles de seguranca de transporte e requisitos de criptografia/LGPD.
 
-A base de atendimento tambem contempla agendamento, respostas de pre-triagem,
-recepcao e visao do enfermeiro com historico de triagens. Disponibilidade de
-vagas, coleta/doacao e visao medica permanecem fora deste incremento.
+A base de atendimento contempla agenda, reserva real de vagas, cancelamento,
+remarcacao, respostas de pre-triagem, recepcao e enfermagem com historico.
+Coleta/doacao, lembretes automaticos e visao medica permanecem fora deste incremento.

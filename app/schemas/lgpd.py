@@ -1,9 +1,10 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 
 from app.schemas.usuario import CorenUF, Perfil, TipoSanguineo
 from app.schemas.triagem import RespostaPreTriagem, ResultadoTriagem
+from app.schemas.agenda import AlteracaoResponse
 
 
 class AtendimentoTitularResponse(BaseModel):
@@ -13,6 +14,11 @@ class AtendimentoTitularResponse(BaseModel):
     observacoes: str | None
     resultado: ResultadoTriagem | None
     finalizada_em: datetime | None
+    alteracoes: list[AlteracaoResponse]
+
+    @field_serializer("agendado_em", "finalizada_em")
+    def utc_timestamp(self, value: datetime | None) -> str | None:
+        return value.replace(tzinfo=timezone.utc).isoformat() if value else None
 
 
 class ConsentimentoResponse(BaseModel):

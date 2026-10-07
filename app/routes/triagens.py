@@ -8,11 +8,13 @@ from app.database import get_db
 from app.models.triagem import Agendamento
 from app.models.usuario import Usuario
 from app.schemas.triagem import (
-    AgendamentoCreate, AgendamentoResponse, AvaliacaoUpdate, FilaResponse,
+    AgendamentoCreate, AgendamentoResponse, AvaliacaoUpdate, ConfirmarChegada, FilaResponse,
     HistoricoItem, IndicadoresResponse, TriagemDetalhe, TriagemFinalizar, TriagemStatus,
 )
 from app.security.authorization import require_roles
 from app.services import triagem as service
+from app.services.agenda import resposta_reserva
+from app.schemas.agenda import ReservaResponse
 
 
 router = APIRouter(tags=["Atendimento"])
@@ -58,15 +60,16 @@ def finalizar(agendamento_id: int, data: TriagemFinalizar,
     return service.salvar_avaliacao(db, usuario, agendamento_id, data, finalizar=True)
 
 
-@router.post("/agendamentos", response_model=AgendamentoResponse, status_code=201)
+@router.post("/agendamentos", response_model=ReservaResponse, status_code=201)
 def agendar(data: AgendamentoCreate, db: Session = Depends(get_db), usuario: Usuario = Depends(doador)):
     return service.create_agendamento(db, usuario, data)
 
 
-@router.get("/agendamentos/me", response_model=list[AgendamentoResponse])
+@router.get("/agendamentos/me", response_model=list[ReservaResponse])
 def meus_agendamentos(db: Session = Depends(get_db), usuario: Usuario = Depends(doador)):
-    return db.scalars(select(Agendamento).where(Agendamento.doador_id == usuario.id)
-                      .order_by(Agendamento.agendado_em.desc())).all()
+    agendas = db.scalars(select(Agendamento).where(Agendamento.doador_id == usuario.id)
+                        .order_by(Agendamento.agendado_em.desc())).all()
+    return [resposta_reserva(db, agenda) for agenda in agendas]
 
 
 @router.get("/historico/me", response_model=list[HistoricoItem])
@@ -81,5 +84,6 @@ def fila_recepcao(pagina: int = Query(1, ge=1), tamanho: int = Query(20, ge=1, l
 
 
 @router.post("/recepcao/agendamentos/{agendamento_id}/receber", response_model=AgendamentoResponse)
-def receber(agendamento_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(recepcao)):
-    return service.receber(db, usuario, agendamento_id)
+def receber(agendamento_id: int, data: ConfirmarChegada,
+            db: Session = Depends(get_db), usuario: Usuario = Depends(recepcao)):
+    return service.receber(db, usuario, agendamento_id, data.versao)
