@@ -3,6 +3,7 @@ from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from app.schemas.questionario import MetadadosPreTriagem, QuestionarioSubmission
 
 
 TriagemStatus = Literal["AGUARDANDO_TRIAGEM", "EM_TRIAGEM", "APTO", "INAPTO", "ENCAMINHADO_MEDICO"]
@@ -19,7 +20,7 @@ class AgendamentoCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     horario_id: int = Field(gt=0)
     chave_requisicao: UUID
-    respostas_pre_triagem: list[RespostaPreTriagem] = Field(default_factory=list, max_length=100)
+    questionario: QuestionarioSubmission
 
 
 class ConfirmarChegada(BaseModel):
@@ -97,6 +98,7 @@ class TriagemDetalhe(BaseModel):
     agendamento: AgendamentoResponse
     doador: DadosDoador
     pre_triagem: list[RespostaPreTriagem]
+    questionario: MetadadosPreTriagem | None = None
     historico: list[HistoricoItem]
     avaliacao: AvaliacaoResponse | None
 

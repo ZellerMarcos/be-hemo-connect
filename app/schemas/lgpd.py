@@ -5,12 +5,14 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_serializer
 from app.schemas.usuario import CorenUF, Perfil, TipoSanguineo
 from app.schemas.triagem import RespostaPreTriagem, ResultadoTriagem
 from app.schemas.agenda import AlteracaoResponse
+from app.schemas.questionario import QuestionarioRegistrado
 
 
 class AtendimentoTitularResponse(BaseModel):
     agendado_em: datetime
     status: str
     pre_triagem: list[RespostaPreTriagem]
+    questionario: QuestionarioRegistrado | None = None
     observacoes: str | None
     resultado: ResultadoTriagem | None
     finalizada_em: datetime | None

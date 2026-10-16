@@ -21,6 +21,7 @@ class Agendamento(Base):
     agendado_em: Mapped[datetime] = mapped_column(DateTime, index=True)
     status: Mapped[str] = mapped_column(String(30), default="AGENDADO", index=True)
     respostas_pre_triagem: Mapped[list[dict[str, str]]] = mapped_column(JSON)
+    questionario_pre_triagem: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     recebido_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     recebido_por: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime)

@@ -4,8 +4,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import RedirectResponse
+from starlette.responses import JSONResponse, RedirectResponse
 
 from app.database import engine
 from app.models.consentimento import Consentimento
@@ -47,6 +49,16 @@ app.add_middleware(
 is_production = os.getenv("APP_ENV", "development").lower() == "production"
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, error: RequestValidationError):
+    if request.url.path == "/agendamentos":
+        # O erro padrão do Pydantic inclui a entrada, que pode conter dados íntimos.
+        return JSONResponse(status_code=422, content={
+            "detail": "Confira os campos da reserva, as respostas do questionário e as três confirmações obrigatórias.",
+        }, headers={"Cache-Control": "no-store"})
+    return await request_validation_exception_handler(request, error)
+
+
 @app.on_event("startup")
 def ensure_lgpd_tables() -> None:
     # Tenta criar a tabela de consentimentos quando ainda nao existe no ambiente.
@@ -77,6 +89,8 @@ async def enforce_transport_security(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.url.path.startswith(("/privacy", "/triagens", "/agendamentos", "/questionario-pre-triagem")):
+        response.headers["Cache-Control"] = "no-store"
     if is_production:
         # HSTS instrui o navegador a continuar usando HTTPS em chamadas futuras.
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

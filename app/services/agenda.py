@@ -17,6 +17,7 @@ from app.schemas.agenda import (
 from app.schemas.triagem import AgendamentoCreate, AgendamentoResponse
 from app.security.audit import registrar_evento
 from app.security.session import utcnow
+from app.services.questionario import canonico, validar
 
 
 def _centro(db: Session, centro_id: int) -> Hemocentro:
@@ -303,19 +304,23 @@ def reservar(db: Session, usuario: Usuario, data: AgendamentoCreate) -> ReservaR
     key = str(data.chave_requisicao)
     previous = db.scalar(select(Agendamento).where(Agendamento.doador_id == usuario.id,
                                                   Agendamento.chave_requisicao == key))
-    answers = [item.model_dump() for item in data.respostas_pre_triagem]
+    submission = canonico(data.questionario)
     if previous:
         original = db.scalar(select(AlteracaoAgendamento).where(
             AlteracaoAgendamento.agendamento_id == previous.id, AlteracaoAgendamento.acao == "RESERVADO",
         ))
-        if original is None or original.horario_novo_id != data.horario_id or previous.respostas_pre_triagem != answers:
+        envelope = previous.questionario_pre_triagem
+        anterior = {key: value for key, value in envelope.items() if key != "enviado_em"} if envelope else None
+        if original is None or original.horario_novo_id != data.horario_id or anterior != submission:
             raise HTTPException(409, "A chave de requisicao ja foi utilizada com outros dados.")
         return resposta_reserva(db, previous)
+    answers = validar(data.questionario)
     slot, config = _validar_horario(db, data.horario_id, centro)
     _validar_vaga(db, usuario, slot)
     agenda = Agendamento(
         doador_id=usuario.id, hemocentro_id=centro.id, horario_id=slot.id, agendado_em=slot.inicio,
         chave_requisicao=key, respostas_pre_triagem=answers, criado_em=utcnow(), status="AGENDADO",
+        questionario_pre_triagem={**submission, "enviado_em": utcnow().replace(tzinfo=timezone.utc).isoformat()},
         versao=1, cancelavel_ate=slot.inicio - timedelta(minutes=config.cancelamento_minutos),
         remarcavel_ate=slot.inicio - timedelta(minutes=config.remarcacao_minutos),
     )

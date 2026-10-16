@@ -284,6 +284,7 @@ Ordem dos scripts SQL no banco existente:
 3. [001_visao_enfermeiro.sql](sql/001_visao_enfermeiro.sql)
 4. [002_cadastro_enfermeiro_coren.sql](sql/002_cadastro_enfermeiro_coren.sql)
 5. [003_agenda_reservas.sql](sql/003_agenda_reservas.sql)
+6. [20261016_questionario_pre_triagem.sql](sql/20261016_questionario_pre_triagem.sql)
 
 Execute cada arquivo inteiro. O primeiro cria a tabela-base de hemocentros
 somente se ausente, sem inserir registros. Se a tabela estiver em outro schema,
@@ -306,7 +307,8 @@ sao omitidos com aviso. E necessario salvar a agenda como publicada para reserva
 | --- | --- | --- |
 | GET/PUT | `/hemocentros/{id}/agenda` | Gestor autorizado: consultar/configurar agenda com `versao`. |
 | GET | `/hemocentros/{id}/disponibilidade?inicio=&fim=` | Usuario autenticado: vagas por data local da unidade. Janela padrao de 7 dias, maxima de 31. |
-| POST | `/agendamentos` | Doador: reservar `horario_id`, `chave_requisicao` UUID e respostas opcionais. |
+| GET | `/questionario-pre-triagem` | Doador: catalogo versionado, aviso, alternativas, dependencias e confirmacoes. |
+| POST | `/agendamentos` | Doador: reservar `horario_id`, `chave_requisicao` UUID e `questionario` obrigatorio. |
 | GET | `/agendamentos/me` | Reservas proprias, prazos, acoes permitidas e historico de alteracoes. |
 | POST | `/agendamentos/{id}/cancelar` | Doador: `versao` e `chave_requisicao` UUID. |
 | POST | `/agendamentos/{id}/remarcar` | Doador: mesmos campos mais `horario_id` da mesma unidade. |
@@ -328,6 +330,73 @@ Cancelamento preserva o registro, grava `CANCELADO` e libera capacidade; cancela
 nao entram na recepcao/enfermagem. Chegada confirmada impede alteracoes pelo doador.
 O historico integra a consulta/exportacao LGPD. A anonimizacao cancela reservas
 futuras ainda pendentes para liberar as vagas, sem apagar o historico clinico.
+
+### Formulario rapido de pre-triagem
+
+Novas reservas exigem um questionario estruturado. O doador nao cria perguntas.
+`POST /agendamentos` recebe:
+
+```json
+{
+  "horario_id": 1,
+  "chave_requisicao": "46f5e05a-6001-45d0-bdd2-344e665e9e70",
+  "questionario": {
+    "versao": "pre-triagem-v1",
+    "versao_aviso": "pre-triagem-privacidade-v1",
+    "respostas": [{"id": "peso", "valores": ["70"]}],
+    "confirmacoes": ["veracidade", "avaliacao_presencial", "ciencia_privacidade"]
+  }
+}
+```
+
+O exemplo ilustra o formato: sozinho e incompleto e retorna `422`. Obtenha o
+catalogo e responda todas as perguntas obrigatorias aplicaveis. Valores sao listas
+de strings; numero e data admitem `desconhecido`. IDs, alternativas e dependencias
+sao validados no servidor. Complementos ocultos devem ser removidos. `nenhum`,
+`desconhecido` e `reservado` sao exclusivos em selecoes multiplas. Peso positivo
+ate 999,9 kg e um limite tecnico de entrada, nao criterio de elegibilidade.
+
+O antigo corpo `respostas_pre_triagem` nao e aceito para criar reservas. A lista
+textual continua preservada para leitura de registros antigos; versoes e aceites
+nao sao inventados retroativamente. A nova coluna JSON guarda respostas por ID,
+versao, confirmacoes e timestamp UTC junto da reserva, na mesma transacao.
+Repetir o mesmo UUID/conteudo e seguro mesmo depois de uma troca de versao ou
+suspensao da coleta; reutilizar a chave com outros dados retorna `409`.
+
+Respostas de saude nunca mudam a reserva para apto/inapto ou pendente de
+avaliacao. `reservado` ("Prefiro conversar com o profissional") e uma resposta
+valida, inclusive nas perguntas intimas. Cancelamento e remarcacao preservam
+o questionario original e nao exigem novo preenchimento. Mudancas de saude ate
+a doacao devem ser informadas a equipe presencialmente.
+
+#### Publicacao segura e rollout
+
+1. Aplicar a migracao aditiva acima em homologacao e depois no banco existente,
+   com backup e schema correto. `create_all` nao altera uma tabela ja criada.
+2. Validar perguntas, linguagem, limites de coleta, orientacoes sobre vacinas,
+   viagens e PrEP/PEP com o servico de hemoterapia. O catalogo e uma proposta
+   editorial: nao contem prazos de impedimento nem calcula aptidao.
+3. Definir/documentar controlador, canal institucional, base legal para dados
+   sensiveis, retencao, tratamento de menores e procedimento de correcao.
+4. Conferir HTTPS, autorizacoes, acesso ao banco/backups e descarte. Nao se
+   presume criptografia ponta a ponta nem conformidade apenas por exibir um aviso.
+5. Publicar frontend e backend coordenadamente. Por padrao,
+   `PRE_TRIAGEM_PUBLICADA=false` impede novas reservas com este contrato; consulta
+   de reservas, cancelamento e remarcacao continuam disponiveis. A interface
+   apresenta a indisponibilidade explicitamente, sem formulario livre alternativo.
+6. Somente apos as validacoes, definir `PRE_TRIAGEM_PUBLICADA=true`,
+   `PRIVACIDADE_CONTROLADOR` e `PRIVACIDADE_CANAL` com valores institucionais reais.
+   A publicacao sem identificacao retorna `503`. Nao usar os dados ficticios
+   das fixtures. Reiniciar o servidor apos alterar o ambiente.
+
+Para testes locais exclusivamente com dados sinteticos, essas variaveis podem ser
+definidas no processo de teste. Nao foi aplicada migracao ao banco configurado no
+ambiente durante a implementacao. Historicos existentes nao precisam ser refeitos.
+
+O aviso especifico tem versao propria e ciencia registrada no envio; nao e
+consentimento generico para outros usos. A politica exibida em novos cadastros
+no frontend passa a `v1.3`; aceites anteriores nao sao reescritos.
+Detalhes sobre controles e direitos: [LGPD](docs/LGPD.md).
 
 ### Implantacao e reservas existentes
 

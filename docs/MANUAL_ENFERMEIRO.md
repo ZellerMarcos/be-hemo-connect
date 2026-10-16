@@ -15,6 +15,22 @@ Este documento explica o uso do sistema. Ele **não substitui protocolos
 institucionais, capacitação profissional ou avaliação clínica** e não define
 critérios para considerar um doador apto ou inapto.
 
+### Questionario rapido no agendamento
+
+Novas reservas podem incluir um questionario estruturado e versionado, publicado
+somente apos homologacao institucional. No detalhe do atendimento, apos a recepcao,
+confira a versao, a data de envio e o aviso apresentado ao doador. Registros antigos
+continuam legiveis e sao identificados como anteriores ao questionario versionado.
+
+"Prefiro conversar com o profissional" e uma resposta valida, especialmente para
+informacoes intimas. Esclareca essas questoes em ambiente reservado, sem julgamento.
+O formulario nunca aprova ou reprova clinicamente o doador. Pergunte sobre mudancas
+de saude ocorridas desde o preenchimento, inclusive quando houve remarcacao.
+
+As consultas ao detalhe sao auditadas sem registrar respostas no evento. A recepcao
+nao visualiza o questionario em sua fila. Nao copie respostas para canais externos.
+Solicitacoes de correcao apos o envio seguem o canal institucional de privacidade.
+
 ## 1. Preparação para o acesso
 
 Antes de começar, tenha:

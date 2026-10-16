@@ -2,6 +2,50 @@
 
 Este documento consolida a base de conformidade do Requisito 4 para o backend.
 
+## Pre-triagem estruturada e dados intimos
+
+O agendamento coleta peso, historico, sintomas, tratamentos, medicamentos,
+vacinacao, procedimentos e viagens declarados, alem de perguntas confidenciais
+sobre gestacao, amamentacao, historico reprodutivo, PrEP/PEP e exposicoes.
+O catalogo e uma proposta sujeita a validacao clinica e juridica antes da coleta
+real. A publicacao fica desativada por padrao (`PRE_TRIAGEM_PUBLICADA=false`).
+
+- Finalidade: pre-triagem e atendimento no hemocentro escolhido; sem classificacao
+  clinica automatica nem uso autorizado para marketing ou analytics.
+- As perguntas intimas admitem `reservado`, sem exigir narrativa e sem impedir a
+  reserva. Campos opcionais nao exigem detalhes clinicos. Campos condicionais
+  que deixam de se aplicar sao removidos do envio.
+- Persistencia: `agendamentos.respostas_pre_triagem` guarda o snapshot textual;
+  `agendamentos.questionario_pre_triagem` guarda versao, aviso, respostas por ID,
+  confirmacoes de ciencia e instante UTC do envio. A gravacao e atomica com a vaga.
+- Ciencia do aviso nao e consentimento generico. A instituicao precisa definir
+  base legal adequada aos dados sensiveis e, se necessario, fluxo especifico de
+  consentimento/revogacao, inclusive para menores, antes de publicar.
+- O aviso identifica controlador e canal por configuracao institucional. Nao
+  inventar contatos ou prazo de retencao. Publicacao sem ambos retorna erro.
+- A enfermagem autorizada da unidade consulta as respostas no atendimento depois
+  da chegada. Recepcao e administracao nao recebem as respostas nos endpoints de
+  agenda/fila. A consulta clinica registra `PRE_TRIAGEM_CONSULTADA` somente com
+  autor, atendimento, momento e finalidade, sem respostas.
+- Respostas nao entram em logs, auditoria, URLs ou armazenamento persistente do
+  navegador. Erros de validacao de reserva nao ecoam o corpo recebido; respostas
+  de agendamento, triagem e direitos usam `Cache-Control: no-store`.
+- Consulta/exportacao do titular inclui o envelope completo e os pares textuais;
+  o PDF inclui versao, data, aviso, confirmacoes e valores por identificador.
+  A anonimizacao existente limpa ambas as copias. Historicos legados mantem
+  envelope nulo, sem inventar consentimento/versao.
+- Nao ha edicao de respostas apos envio nesta entrega: correcao deve ser solicitada
+  pelo canal institucional. A instituicao deve avaliar obrigacoes legais antes
+  de publicar o atual fluxo de anonimizacao; nao prometer exclusao incondicional.
+- HTTPS, acesso ao banco e backups, prazo de retencao e descarte sao verificacoes
+  operacionais obrigatorias; o aviso nao comprova esses controles nem promete
+  criptografia ponta a ponta ou seguranca absoluta.
+
+Aplicar a [migracao aditiva](../sql/20261016_questionario_pre_triagem.sql) antes
+do rollout coordenado descrito no [README](../README.md#formulario-rapido-de-pre-triagem).
+O frontend apresenta politica `v1.3` para novos aceites; o aviso especifico tem
+versao independente e e confirmado a cada nova reserva.
+
 ## 1. Escopo
 
 - Sistema: Hemo Connect Backend

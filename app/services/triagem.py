@@ -15,6 +15,7 @@ from app.security.authorization import require_hemocentro
 from app.security.session import utcnow
 from app.services.agenda import reservar
 from app.schemas.agenda import ReservaResponse
+from app.services.questionario import metadados
 
 
 FINAL_STATUSES = ("APTO", "INAPTO", "ENCAMINHADO_MEDICO")
@@ -120,6 +121,7 @@ def detalhe(db: Session, usuario: Usuario, agendamento_id: int) -> TriagemDetalh
         agendamento=agenda,
         doador=doador,
         pre_triagem=agenda.respostas_pre_triagem,
+        questionario=metadados(agenda.questionario_pre_triagem),
         historico=historico(db, usuario, agenda.doador_id),
         avaliacao=avaliacao,
     )

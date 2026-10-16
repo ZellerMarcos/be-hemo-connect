@@ -15,12 +15,20 @@ from app.security.authorization import require_roles
 from app.services import triagem as service
 from app.services.agenda import resposta_reserva
 from app.schemas.agenda import ReservaResponse
+from app.schemas.questionario import CatalogoQuestionario
+from app.services.questionario import catalogo
+from app.security.audit import registrar_evento
 
 
 router = APIRouter(tags=["Atendimento"])
 enfermeiro = require_roles("ENFERMEIRO")
 doador = require_roles("DOADOR")
 recepcao = require_roles("RECEPCIONISTA", "RESPONSAVEL_HEMOCENTRO", "ADMINISTRADOR")
+
+
+@router.get("/questionario-pre-triagem", response_model=CatalogoQuestionario)
+def questionario_pre_triagem(usuario: Usuario = Depends(doador)):
+    return catalogo()
 
 
 @router.get("/triagens/indicadores", response_model=IndicadoresResponse)
@@ -40,7 +48,10 @@ def fila(
 
 @router.get("/triagens/{agendamento_id}", response_model=TriagemDetalhe)
 def detalhes(agendamento_id: int, db: Session = Depends(get_db), usuario: Usuario = Depends(enfermeiro)):
-    return service.detalhe(db, usuario, agendamento_id)
+    detalhe = service.detalhe(db, usuario, agendamento_id)
+    registrar_evento(db, "PRE_TRIAGEM_CONSULTADA", "sucesso", user_id=usuario.id,
+                     atendimento_id=agendamento_id, motivo="atendimento")
+    return detalhe
 
 
 @router.post("/triagens/{agendamento_id}/iniciar", response_model=TriagemDetalhe)

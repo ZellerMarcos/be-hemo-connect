@@ -148,6 +148,7 @@ def montar_dados_titular(db: Session, usuario: Usuario) -> dict[str, object]:
             "agendado_em": agenda.agendado_em,
             "status": agenda.status,
             "pre_triagem": agenda.respostas_pre_triagem,
+            "questionario": agenda.questionario_pre_triagem,
             "observacoes": avaliacao.observacoes if avaliacao else None,
             "resultado": avaliacao.resultado if avaliacao else None,
             "finalizada_em": avaliacao.finalizada_em if avaliacao else None,
@@ -191,6 +192,7 @@ def excluir_dados_titular(db: Session, usuario: Usuario) -> None:
     for agenda in db.scalars(select(Agendamento).where(Agendamento.doador_id == usuario.id)
                              .with_for_update().execution_options(populate_existing=True)).all():
         agenda.respostas_pre_triagem = []
+        agenda.questionario_pre_triagem = None
         if agenda.status == "AGENDADO" and agenda.agendado_em > agora:
             db.add(AlteracaoAgendamento(
                 agendamento_id=agenda.id, usuario_id=usuario.id, acao="CANCELADO_CONTA_REMOVIDA",

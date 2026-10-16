@@ -12,6 +12,7 @@ from app.security.audit import verificar_integridade
 from app.security.session import utcnow
 from app.services.agenda import _horarios_do_dia
 from tests.test_triagens import context  # noqa: F401
+from tests.questionario_helpers import questionario_payload
 
 
 def config_payload(versao=1, capacidade=1):
@@ -43,7 +44,7 @@ def book(context, slot_id, donor="doador", key=None):
     client, _, headers, _ = context
     return client.post("/agendamentos", headers=headers[donor], json={
         "horario_id": slot_id, "chave_requisicao": key or str(uuid4()),
-        "respostas_pre_triagem": [],
+        "questionario": questionario_payload(),
     })
 
 
