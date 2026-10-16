@@ -20,8 +20,3 @@ def questionario_payload():
             {"id": "exposicoes", "valores": ["reservado"]},
         ],
     }
-
-
-def publicar_questionario(monkeypatch):
-    monkeypatch.setenv("PRIVACIDADE_CONTROLADOR", "Instituicao ficticia de teste")
-    monkeypatch.setenv("PRIVACIDADE_CANAL", "privacidade@example.com")

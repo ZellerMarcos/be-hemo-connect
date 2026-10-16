@@ -36,8 +36,10 @@ def test_catalogo_versionado_autenticado(context):
     data = response.json()
     assert data["publicado"] is True
     assert data["versao"] == "pre-triagem-v1"
+    assert data["versao_aviso"] == "pre-triagem-privacidade-v1"
     assert "dados sensíveis" in data["aviso"]
-    assert "Instituicao ficticia de teste" in data["aviso"]
+    assert "Controlador:" not in data["aviso"]
+    assert "Canal de privacidade:" not in data["aviso"]
     assert len({item["id"] for item in data["perguntas"]}) == len(data["perguntas"])
     assert len(data["confirmacoes"]) == 3
     assert response.headers["cache-control"] == "no-store"
@@ -108,13 +110,18 @@ def test_questionario_ignora_antiga_flag_de_publicacao(agenda, monkeypatch):
     assert enviar(agenda, questionario_payload()).status_code == 201
 
 
-@pytest.mark.parametrize("variavel", ["PRIVACIDADE_CONTROLADOR", "PRIVACIDADE_CANAL"])
-def test_publicacao_exige_identificacao_institucional(agenda, monkeypatch, variavel):
+def test_questionario_nao_depende_de_variaveis_de_privacidade(agenda, monkeypatch):
     client, _, headers, _ = agenda
-    monkeypatch.delenv(variavel)
-    response = enviar(agenda, questionario_payload())
-    assert response.status_code == 503
-    assert client.get("/questionario-pre-triagem", headers=headers["doador"]).status_code == 503
+    monkeypatch.delenv("PRIVACIDADE_CONTROLADOR", raising=False)
+    monkeypatch.delenv("PRIVACIDADE_CANAL", raising=False)
+    assert client.get("/questionario-pre-triagem", headers=headers["doador"]).status_code == 200
+    assert enviar(agenda, questionario_payload()).status_code == 201
+    anterior = client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=1",
+                          headers=headers["doador"])
+    assert anterior.status_code == 200
+    assert anterior.json()["compativel"] is True
+    assert anterior.json()["versao_aviso"] == "pre-triagem-privacidade-v1"
+    assert {"id": "peso", "valores": ["70"]} in anterior.json()["respostas"]
 
 
 def test_rejeita_contrato_livre_e_ausencia_de_formulario(agenda):

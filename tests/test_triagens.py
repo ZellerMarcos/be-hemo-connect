@@ -16,12 +16,11 @@ from app.models.agenda import AgendaHemocentro
 from app.security.audit import verificar_integridade
 from app.security.password import hash_password
 from app.security.session import issue_session, utcnow
-from tests.questionario_helpers import publicar_questionario, questionario_payload
+from tests.questionario_helpers import questionario_payload
 
 
 @pytest.fixture()
-def context(tmp_path, monkeypatch):
-    publicar_questionario(monkeypatch)
+def context(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'triagens.db'}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     headers = {}
