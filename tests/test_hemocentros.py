@@ -73,6 +73,23 @@ def test_list_hemocentros():
     assert len(response.json()) == 1
 
 
+def test_doador_consulta_unidades_ativas_e_inativas_sem_permissao_de_cadastro():
+    headers = auth_headers(engine)
+    ativa = client.post("/hemocentros", json=payload(), headers=headers).json()
+    inativa = client.post("/hemocentros", json={**payload("Unidade inativa"), "status": "INATIVO"},
+                          headers=headers).json()
+    with Session(engine) as db:
+        usuario = db.scalar(select(Usuario))
+        usuario.perfil = "DOADOR"
+        db.commit()
+    headers = auth_headers(engine)
+    response = client.get("/hemocentros", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == [ativa, inativa]
+    assert client.get(f"/hemocentros/{ativa['id']}", headers=headers).json() == ativa
+    assert client.post("/hemocentros", json=payload("Nova unidade"), headers=headers).status_code == 403
+
+
 def test_get_hemocentro():
     created = client.post(
         "/hemocentros",
