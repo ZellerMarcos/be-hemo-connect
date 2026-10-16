@@ -23,6 +23,5 @@ def questionario_payload():
 
 
 def publicar_questionario(monkeypatch):
-    monkeypatch.setenv("PRE_TRIAGEM_PUBLICADA", "true")
     monkeypatch.setenv("PRIVACIDADE_CONTROLADOR", "Instituicao ficticia de teste")
     monkeypatch.setenv("PRIVACIDADE_CANAL", "privacidade@example.com")

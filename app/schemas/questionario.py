@@ -65,3 +65,12 @@ class MetadadosPreTriagem(BaseModel):
 
 class QuestionarioRegistrado(QuestionarioSubmission):
     enviado_em: datetime
+
+
+class UltimoQuestionario(BaseModel):
+    encontrado: bool
+    compativel: bool
+    versao: str | None = None
+    versao_aviso: str | None = None
+    enviado_em: datetime | None = None
+    respostas: list[RespostaQuestionario] = Field(default_factory=list)

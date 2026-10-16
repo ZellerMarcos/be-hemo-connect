@@ -44,18 +44,77 @@ def test_catalogo_versionado_autenticado(context):
     assert client.get("/questionario-pre-triagem", headers=headers["recepcao"]).status_code == 403
 
 
-def test_publicacao_desabilitada_por_padrao(agenda, monkeypatch):
+def test_ultima_resposta_isolada_por_doador_unidade_e_versao(agenda):
     client, _, headers, _ = agenda
-    monkeypatch.delenv("PRE_TRIAGEM_PUBLICADA")
-    assert client.get("/questionario-pre-triagem", headers=headers["doador"]).json()["publicado"] is False
-    assert enviar(agenda, questionario_payload()).status_code == 409
+    empty = client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=1",
+                       headers=headers["doador"])
+    assert empty.status_code == 200
+    assert empty.json() == {
+        "encontrado": False, "compativel": False, "versao": None,
+        "versao_aviso": None, "enviado_em": None, "respostas": [],
+    }
+
+    reservation = enviar(agenda, questionario_payload())
+    assert reservation.status_code == 201
+    own = client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=1",
+                     headers=headers["doador"])
+    assert own.status_code == 200
+    assert own.json()["encontrado"] is True and own.json()["compativel"] is True
+    assert own.json()["versao"] == "pre-triagem-v1"
+    assert own.json()["enviado_em"]
+    assert {"id": "peso", "valores": ["70"]} in own.json()["respostas"]
+
+    other_unit = client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=2",
+                            headers=headers["doador"])
+    other_user = client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=1",
+                            headers=headers["outro_doador"])
+    assert other_unit.json()["encontrado"] is False
+    assert other_user.json()["encontrado"] is False
+    assert client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=1",
+                      headers=headers["recepcao"]).status_code == 403
+    assert own.headers["cache-control"] == "no-store"
+    canceled = client.post(f"/agendamentos/{reservation.json()['id']}/cancelar",
+                           headers=headers["doador"], json={"versao": 1, "chave_requisicao": str(uuid4())})
+    assert canceled.status_code == 200
+    still_available = client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=1",
+                                 headers=headers["doador"])
+    assert still_available.json()["encontrado"] is True
+
+
+def test_ultima_resposta_incompativel_nao_retorna_respostas_anteriores(agenda):
+    client, _, headers, _ = agenda
+    first = enviar(agenda, questionario_payload())
+    assert first.status_code == 201
+    slot = slots(agenda)[1]
+    newer = questionario_payload()
+    newer["versao"] = "pre-triagem-v2"
+    with patch("app.services.questionario.VERSAO", "pre-triagem-v2"):
+        response = client.post("/agendamentos", headers=headers["doador"], json={
+            "horario_id": slot["id"], "chave_requisicao": str(uuid4()), "questionario": newer,
+        })
+    assert response.status_code == 201, response.text
+    latest = client.get("/questionario-pre-triagem/ultima-resposta?hemocentro_id=1",
+                        headers=headers["doador"])
+    assert latest.status_code == 200
+    assert latest.json()["encontrado"] is True
+    assert latest.json()["compativel"] is False
+    assert latest.json()["respostas"] == []
+
+
+def test_questionario_ignora_antiga_flag_de_publicacao(agenda, monkeypatch):
+    client, _, headers, _ = agenda
+    monkeypatch.setenv("PRE_TRIAGEM_PUBLICADA", "false")
+    assert client.get("/questionario-pre-triagem", headers=headers["doador"]).json()["publicado"] is True
+    assert enviar(agenda, questionario_payload()).status_code == 201
 
 
 @pytest.mark.parametrize("variavel", ["PRIVACIDADE_CONTROLADOR", "PRIVACIDADE_CANAL"])
 def test_publicacao_exige_identificacao_institucional(agenda, monkeypatch, variavel):
+    client, _, headers, _ = agenda
     monkeypatch.delenv(variavel)
     response = enviar(agenda, questionario_payload())
     assert response.status_code == 503
+    assert client.get("/questionario-pre-triagem", headers=headers["doador"]).status_code == 503
 
 
 def test_rejeita_contrato_livre_e_ausencia_de_formulario(agenda):
@@ -179,7 +238,6 @@ def test_idempotencia_ordem_versao_e_publicacao(agenda, monkeypatch):
         repeated = client.post("/agendamentos", headers=headers["doador"], json=body)
         assert repeated.status_code == 201
         assert repeated.json()["id"] == first.json()["id"]
-    monkeypatch.setenv("PRE_TRIAGEM_PUBLICADA", "false")
     assert client.post("/agendamentos", headers=headers["doador"], json=body).status_code == 201
     alterar(data, "gestacao", ["nao"])
     assert client.post("/agendamentos", headers=headers["doador"], json=body).status_code == 409

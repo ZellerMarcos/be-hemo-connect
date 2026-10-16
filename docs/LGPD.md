@@ -7,8 +7,10 @@ Este documento consolida a base de conformidade do Requisito 4 para o backend.
 O agendamento coleta peso, historico, sintomas, tratamentos, medicamentos,
 vacinacao, procedimentos e viagens declarados, alem de perguntas confidenciais
 sobre gestacao, amamentacao, historico reprodutivo, PrEP/PEP e exposicoes.
-O catalogo e uma proposta sujeita a validacao clinica e juridica antes da coleta
-real. A publicacao fica desativada por padrao (`PRE_TRIAGEM_PUBLICADA=false`).
+O formulario e apresentado como etapa fixa das novas reservas. A instituicao
+deve validar perguntas e governanca antes de usar respostas reais; a interface
+nao comprova aprovacao clinica ou juridica. A API exige identificacao institucional
+do controlador e canal de privacidade antes de disponibilizar catalogo/reservas.
 
 - Finalidade: pre-triagem e atendimento no hemocentro escolhido; sem classificacao
   clinica automatica nem uso autorizado para marketing ou analytics.
@@ -22,7 +24,17 @@ real. A publicacao fica desativada por padrao (`PRE_TRIAGEM_PUBLICADA=false`).
   base legal adequada aos dados sensiveis e, se necessario, fluxo especifico de
   consentimento/revogacao, inclusive para menores, antes de publicar.
 - O aviso identifica controlador e canal por configuracao institucional. Nao
-  inventar contatos ou prazo de retencao. Publicacao sem ambos retorna erro.
+  inventar contatos ou prazo de retencao. Ausencia de qualquer valor retorna
+  erro `503`; `PRE_TRIAGEM_PUBLICADA` nao e mais utilizado.
+- No agendamento, a ultima submissao estruturada do mesmo doador e hemocentro
+  pode pre-preencher o formulario, somente se as versoes do questionario e aviso
+  coincidirem. O endpoint nao retorna confirmacoes anteriores; o doador precisa
+  revisar respostas e marcar confirmacoes novamente. Respostas de outra unidade
+  nao sao consultadas, e registros legados nao sao inferidos.
+- Cada nova reserva salva um snapshot independente. Cancelamento nao apaga a
+  submissao que pode ser sugerida novamente; remarcacao preserva o snapshot
+  original do atendimento. O endpoint de sugestao e autenticado, filtrado pelo
+  titular da sessao e unidade escolhida, e nao registra respostas em auditoria.
 - A enfermagem autorizada da unidade consulta as respostas no atendimento depois
   da chegada. Recepcao e administracao nao recebem as respostas nos endpoints de
   agenda/fila. A consulta clinica registra `PRE_TRIAGEM_CONSULTADA` somente com

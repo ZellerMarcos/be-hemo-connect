@@ -334,6 +334,18 @@ futuras ainda pendentes para liberar as vagas, sem apagar o historico clinico.
 ### Formulario rapido de pre-triagem
 
 Novas reservas exigem um questionario estruturado. O doador nao cria perguntas.
+Depois de selecionar unidade e horario, o formulario **Formulario Pre Triagem**
+fica aberto na ultima etapa antes do envio final. A primeira submissao compativel
+na unidade preenche os campos; para reservas seguintes, a API pode sugerir as
+ultimas respostas estruturadas do mesmo doador e hemocentro. O doador deve revisar
+e atualizar os dados, e marcar todas as confirmacoes novamente a cada reserva.
+
+O frontend consulta `GET /questionario-pre-triagem/ultima-resposta?hemocentro_id=1`.
+O endpoint usa a identidade autenticada (nao um ID de doador enviado pelo cliente),
+retorna apenas respostas da mesma unidade e nao reutiliza confirmacoes. Resposta
+incompativel com a versao atual inicia vazia; registro legado nao e inferido.
+Cancelamento nao apaga sugestoes; cada reserva continua guardando seu snapshot
+independente para a consulta profissional.
 `POST /agendamentos` recebe:
 
 ```json
@@ -369,7 +381,7 @@ valida, inclusive nas perguntas intimas. Cancelamento e remarcacao preservam
 o questionario original e nao exigem novo preenchimento. Mudancas de saude ate
 a doacao devem ser informadas a equipe presencialmente.
 
-#### Publicacao segura e rollout
+#### Configuracao institucional e rollout
 
 1. Aplicar a migracao aditiva acima em homologacao e depois no banco existente,
    com backup e schema correto. `create_all` nao altera uma tabela ja criada.
@@ -380,18 +392,16 @@ a doacao devem ser informadas a equipe presencialmente.
    sensiveis, retencao, tratamento de menores e procedimento de correcao.
 4. Conferir HTTPS, autorizacoes, acesso ao banco/backups e descarte. Nao se
    presume criptografia ponta a ponta nem conformidade apenas por exibir um aviso.
-5. Publicar frontend e backend coordenadamente. Por padrao,
-   `PRE_TRIAGEM_PUBLICADA=false` impede novas reservas com este contrato; consulta
-   de reservas, cancelamento e remarcacao continuam disponiveis. A interface
-   apresenta a indisponibilidade explicitamente, sem formulario livre alternativo.
-6. Somente apos as validacoes, definir `PRE_TRIAGEM_PUBLICADA=true`,
-   `PRIVACIDADE_CONTROLADOR` e `PRIVACIDADE_CANAL` com valores institucionais reais.
-   A publicacao sem identificacao retorna `503`. Nao usar os dados ficticios
-   das fixtures. Reiniciar o servidor apos alterar o ambiente.
+5. Publicar backend compativel e frontend coordenadamente. Configure
+   `PRIVACIDADE_CONTROLADOR` e `PRIVACIDADE_CANAL` com valores institucionais
+   reais; catalogo e novas reservas retornam `503` se algum estiver ausente.
+   Nao usar os dados ficticios das fixtures. Reiniciar o servidor apos alterar
+   o ambiente. `PRE_TRIAGEM_PUBLICADA` foi removida e pode ser apagada do Render.
 
-Para testes locais exclusivamente com dados sinteticos, essas variaveis podem ser
-definidas no processo de teste. Nao foi aplicada migracao ao banco configurado no
-ambiente durante a implementacao. Historicos existentes nao precisam ser refeitos.
+Para testes locais exclusivamente com dados sinteticos, as variaveis institucionais
+podem ser definidas no processo de teste. Esta alteracao nao adiciona tabela ou
+coluna; confirme que o schema existente ja possui `questionario_pre_triagem`.
+Nenhuma migracao ou alteracao de banco de producao foi executada.
 
 O aviso especifico tem versao propria e ciencia registrada no envio; nao e
 consentimento generico para outros usos. A politica exibida em novos cadastros
