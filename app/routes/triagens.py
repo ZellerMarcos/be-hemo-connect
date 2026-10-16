@@ -15,8 +15,8 @@ from app.security.authorization import require_roles
 from app.services import triagem as service
 from app.services.agenda import resposta_reserva
 from app.schemas.agenda import ReservaResponse
-from app.schemas.questionario import CatalogoQuestionario
-from app.services.questionario import catalogo
+from app.schemas.questionario import CatalogoQuestionario, UltimoQuestionario
+from app.services.questionario import catalogo, ultima_resposta
 from app.security.audit import registrar_evento
 
 
@@ -29,6 +29,15 @@ recepcao = require_roles("RECEPCIONISTA", "RESPONSAVEL_HEMOCENTRO", "ADMINISTRAD
 @router.get("/questionario-pre-triagem", response_model=CatalogoQuestionario)
 def questionario_pre_triagem(usuario: Usuario = Depends(doador)):
     return catalogo()
+
+
+@router.get("/questionario-pre-triagem/ultima-resposta", response_model=UltimoQuestionario)
+def ultima_resposta_pre_triagem(
+    hemocentro_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(doador),
+):
+    return ultima_resposta(db, usuario, hemocentro_id)
 
 
 @router.get("/triagens/indicadores", response_model=IndicadoresResponse)

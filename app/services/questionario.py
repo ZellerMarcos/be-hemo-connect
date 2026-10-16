@@ -4,10 +4,14 @@ from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.models.triagem import Agendamento
+from app.models.usuario import Usuario
 from app.schemas.questionario import (
-    CatalogoQuestionario, Confirmacao, Dependencia, MetadadosPreTriagem,
-    Opcao, Pergunta, QuestionarioSubmission,
+    CatalogoQuestionario, Confirmacao, Dependencia, MetadadosPreTriagem, Opcao,
+    Pergunta, QuestionarioSubmission, UltimoQuestionario,
 )
 
 
@@ -36,7 +40,6 @@ def complemento(id: str, texto: str, principal: str, *, tipo: Literal["texto", "
     )
 
 
-# Proposta editorial: a publicação depende de aprovação clínica e governança institucional.
 PERGUNTAS = [
     Pergunta(id="peso", texto="Qual é seu peso atual, em kg?", tipo="numero"),
     escolha("doacao_anterior", "Você já doou sangue?"),
@@ -114,14 +117,10 @@ CONFIRMACOES = [
 
 
 def catalogo() -> CatalogoQuestionario:
-    configuracao = os.getenv("PRE_TRIAGEM_PUBLICADA", "false").lower()
-    if configuracao not in ("true", "false"):
-        raise HTTPException(503, "Configuração de publicação da pré-triagem inválida.")
-    publicado = configuracao == "true"
     controlador = os.getenv("PRIVACIDADE_CONTROLADOR", "").strip()
     canal = os.getenv("PRIVACIDADE_CANAL", "").strip()
-    if publicado and (not controlador or not canal):
-        raise HTTPException(503, "A instituição precisa configurar o controlador e o canal de privacidade antes de publicar a pré-triagem.")
+    if not controlador or not canal:
+        raise HTTPException(503, "A instituição precisa configurar o controlador e o canal de privacidade da pré-triagem.")
     aviso = (
         "Estas perguntas incluem dados sensíveis de saúde. As respostas serão usadas na sua "
         "pré-triagem e no atendimento pelo hemocentro escolhido. Você pode consultar e exportar "
@@ -136,11 +135,39 @@ def catalogo() -> CatalogoQuestionario:
     )
     if controlador and canal:
         aviso += f" Controlador: {controlador}. Canal de privacidade: {canal}."
-    if not publicado:
-        aviso = "Proposta ainda não publicada para coleta de dados reais. " + aviso
     return CatalogoQuestionario(
-        versao=VERSAO, versao_aviso=VERSAO_AVISO, publicado=publicado, aviso=aviso,
+        versao=VERSAO, versao_aviso=VERSAO_AVISO, publicado=True, aviso=aviso,
         confirmacoes=CONFIRMACOES, perguntas=PERGUNTAS,
+    )
+
+
+def ultima_resposta(db: Session, usuario: Usuario, hemocentro_id: int) -> UltimoQuestionario:
+    catalogo_atual = catalogo()
+    envelope = db.scalar(
+        select(Agendamento.questionario_pre_triagem)
+        .where(
+            Agendamento.doador_id == usuario.id,
+            Agendamento.hemocentro_id == hemocentro_id,
+            Agendamento.questionario_pre_triagem.is_not(None),
+        )
+        .order_by(Agendamento.criado_em.desc(), Agendamento.id.desc())
+        .limit(1)
+    )
+    if not isinstance(envelope, dict):
+        return UltimoQuestionario(encontrado=False, compativel=False)
+
+    compativel = (
+        envelope.get("versao") == catalogo_atual.versao
+        and envelope.get("versao_aviso") == catalogo_atual.versao_aviso
+    )
+    respostas = envelope.get("respostas", []) if compativel else []
+    return UltimoQuestionario(
+        encontrado=True,
+        compativel=compativel,
+        versao=envelope.get("versao") if isinstance(envelope.get("versao"), str) else None,
+        versao_aviso=envelope.get("versao_aviso") if isinstance(envelope.get("versao_aviso"), str) else None,
+        enviado_em=envelope.get("enviado_em"),
+        respostas=respostas,
     )
 
 
@@ -157,8 +184,6 @@ def canonico(data: QuestionarioSubmission) -> dict[str, object]:
 
 def validar(data: QuestionarioSubmission) -> list[dict[str, str]]:
     atual = catalogo()
-    if not atual.publicado:
-        raise HTTPException(409, "Pré-triagem ainda não publicada. Confirme as orientações com o hemocentro.")
     if data.versao != atual.versao or data.versao_aviso != atual.versao_aviso:
         raise HTTPException(409, "O questionário ou aviso foi atualizado. Recarregue e revise suas respostas antes de enviar.")
     ids = [item.id for item in data.respostas]

@@ -17,10 +17,13 @@ critérios para considerar um doador apto ou inapto.
 
 ### Questionario rapido no agendamento
 
-Novas reservas podem incluir um questionario estruturado e versionado, publicado
-somente apos homologacao institucional. No detalhe do atendimento, apos a recepcao,
+Novas reservas incluem um questionario estruturado e versionado. No detalhe do atendimento, apos a recepcao,
 confira a versao, a data de envio e o aviso apresentado ao doador. Registros antigos
 continuam legiveis e sao identificados como anteriores ao questionario versionado.
+Em novas reservas, o doador pode receber sugestoes das respostas anteriores da
+mesma unidade; cada reserva guarda uma nova copia revisada. Consulte somente o
+snapshot correspondente ao atendimento atual e pergunte sobre mudancas desde o
+preenchimento, inclusive quando houve remarcacao.
 
 "Prefiro conversar com o profissional" e uma resposta valida, especialmente para
 informacoes intimas. Esclareca essas questoes em ambiente reservado, sem julgamento.
