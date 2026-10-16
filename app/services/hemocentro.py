@@ -1,7 +1,10 @@
-from sqlalchemy import select
+from fastapi import HTTPException
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.hemocentro import Hemocentro
+from app.models.agenda import AgendaHemocentro, HorarioAgenda
+from app.models.triagem import Agendamento
 from app.schemas.hemocentro import HemocentroCreate, HemocentroUpdate
 
 
@@ -38,6 +41,13 @@ def update_hemocentro(
 
 
 def delete_hemocentro(db: Session, hemocentro: Hemocentro) -> None:
+    locked = db.scalar(select(Hemocentro).where(Hemocentro.id == hemocentro.id).with_for_update())
+    if locked is None:
+        raise HTTPException(404, "Hemocentro nao encontrado.")
+    if db.scalar(select(Agendamento.id).where(Agendamento.hemocentro_id == hemocentro.id).limit(1)) is not None:
+        raise HTTPException(409, "A unidade possui atendimentos. Inative-a para preservar o historico.")
+    db.execute(delete(AgendaHemocentro).where(AgendaHemocentro.hemocentro_id == hemocentro.id))
+    db.execute(delete(HorarioAgenda).where(HorarioAgenda.hemocentro_id == hemocentro.id))
     # Remove o registro do banco após confirmar sua existência e validade da requisição.
     db.delete(hemocentro)
     # A operação só é considerada concluída depois do commit da transação.

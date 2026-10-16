@@ -17,6 +17,7 @@ from app.schemas.auth import (
     TwoFactorVerifyRequest,
     TwoFactorVerifyResponse,
 )
+from app.security.session import authenticate_session, issue_session, revoke_session
 from app.services.auth import (
     authenticate_user,
     get_login_error_detail,
@@ -24,8 +25,6 @@ from app.services.auth import (
     logout_user,
     request_password_reset,
     reset_password,
-    update_last_activity,
-    validate_active_session,
     verify_two_factor_code,
 )
 
@@ -59,9 +58,15 @@ def verify_two_factor(data: TwoFactorVerifyRequest, db: Session = Depends(get_db
             detail="Código de verificação inválido.",
         )
     # Em autenticação bem-sucedida, registra a atividade atual para renovar a sessão do backend.
-    update_last_activity(db, str(data.email))
-    # O nome é devolvido para a experiência autenticada; nenhum segredo retorna na resposta.
-    return TwoFactorVerifyResponse(authenticated=True, nome=usuario.nome if usuario is not None else "Usuário")
+    if usuario is None:
+        raise HTTPException(401, "Sessão inválida.")
+    token = issue_session(db, usuario)
+    return TwoFactorVerifyResponse(
+        authenticated=True,
+        nome=usuario.nome,
+        usuario=LoginResponse.model_validate(usuario),
+        access_token=token,
+    )
 
 
 @router.post("/forgot-password", response_model=PasswordResetResponse)
@@ -82,29 +87,27 @@ def reset_password_route(data: PasswordResetTokenRequest, db: Session = Depends(
 
 @router.post("/logout")
 def logout(
-    email: Annotated[str | None, Header(alias="x-user-email", convert_underscores=True)] = None,
+    authorization: Annotated[str | None, Header()] = None,
     db: Session = Depends(get_db),
 ):
     # Logout manual: o servidor remove a marcação de atividade para encerrar a sessão por segurança.
-    if email is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sessão inválida.",
-        )
-    logout_user(db, email)
+    usuario = authenticate_session(db, authorization)
+    if authorization is None:
+        raise HTTPException(401, "Sessão inválida.")
+    revoke_session(db, authorization)
+    logout_user(db, usuario.email)
     # O estado persistido foi limpo; a resposta apenas confirma o encerramento da sessão.
     return {"logged_out": True}
 
 
 def require_active_session(
-    email: Annotated[str | None, Header(alias="x-user-email", convert_underscores=True)] = None,
+    authorization: Annotated[str | None, Header()] = None,
     db: Session = Depends(get_db),
 ):
     # Dependência compartilhada para todas as rotas protegidas: valida a sessão e o timeout de inatividade.
-    if email is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sessão inválida.",
-        )
-    # A sessão validada é devolvida para as rotas que precisam do usuário completo.
-    return validate_active_session(db, email)
+    return authenticate_session(db, authorization)
+
+
+@router.get("/me", response_model=LoginResponse)
+def current_user(usuario: Usuario = Depends(require_active_session)):
+    return usuario

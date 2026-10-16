@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.models.audit_log import AuditLog
@@ -29,15 +29,24 @@ def registrar_evento(
     motivo: str | None = None,
     ip_address: str | None = None,
     user_agent: str | None = None,
+    atendimento_id: int | None = None,
+    alvo_usuario_id: int | None = None,
 ) -> AuditLog:
     """Persiste um evento sem armazenar credenciais, tokens ou códigos temporários."""
     # O fluxo cria um payload seguro, encadeia-o ao evento anterior e persiste o registro
     # antes de emitir a mensagem operacional. Senhas, tokens e codigos nunca entram aqui.
-    metadata = {"motivo": motivo} if motivo else {}
+    metadata: dict[str, Any] = {"motivo": motivo} if motivo else {}
+    if atendimento_id is not None:
+        metadata["atendimento_id"] = atendimento_id
+    if alvo_usuario_id is not None:
+        metadata["alvo_usuario_id"] = alvo_usuario_id
     occurred_at = datetime.now(timezone.utc).replace(tzinfo=None)
     # Limita o user-agent para evitar que uma entrada externa cresca sem controle.
     safe_user_agent = user_agent[:500] if user_agent else None
     # O ultimo registro fornece o elo anterior da cadeia de integridade.
+    if db.get_bind().dialect.name == "postgresql":
+        # Serializa o encadeamento entre processos que escrevem no PostgreSQL.
+        db.execute(text("SELECT pg_advisory_xact_lock(1847301)"))
     previous = db.scalar(select(AuditLog).order_by(AuditLog.id.desc()))
     previous_hash = previous.current_hash if previous else None
     payload = {

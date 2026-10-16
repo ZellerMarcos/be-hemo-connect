@@ -6,6 +6,7 @@ from app.models.usuario import Usuario
 from app.security.password import hash_password
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 from app.services.privacidade import registrar_consentimentos_iniciais
+from app.security.audit import registrar_evento
 
 
 class DuplicateUsuarioError(Exception):
@@ -39,9 +40,13 @@ def _check_duplicates(db: Session, cpf: str, email: str, usuario_id: int | None 
         raise DuplicateUsuarioError("email")
 
 
-def create_usuario(db: Session, data: UsuarioCreate) -> Usuario:
+def create_usuario(db: Session, data: UsuarioCreate, *, aprovacao_pendente: bool = False) -> Usuario:
     # Cria um usuário novo com senha separada do restante dos dados e depois aplica hash.
     _check_duplicates(db, data.cpf, str(data.email))
+    if data.coren_numero is not None and db.scalar(select(Usuario.id).where(
+        Usuario.coren_numero == data.coren_numero, Usuario.coren_uf == data.coren_uf,
+    )) is not None:
+        raise DuplicateUsuarioError("COREN nesta UF")
     usuario_data = data.model_dump(
         exclude={
             "senha",
@@ -51,6 +56,7 @@ def create_usuario(db: Session, data: UsuarioCreate) -> Usuario:
         }
     )
     usuario_data["senha_hash"] = hash_password(data.senha)
+    usuario_data["aprovacao_pendente"] = aprovacao_pendente
     usuario = Usuario(**usuario_data)
     usuario.email = str(data.email)
     db.add(usuario)
@@ -63,10 +69,20 @@ def create_usuario(db: Session, data: UsuarioCreate) -> Usuario:
             data.consentimento_finalidades,
             data.consentimento_versao,
         )
-        db.commit()
+        if aprovacao_pendente:
+            registrar_evento(
+                db, "ENFERMEIRO_CADASTRO_PENDENTE", "sucesso",
+                alvo_usuario_id=usuario.id,
+            )
+        else:
+            db.commit()
     except IntegrityError as error:
         # Rollback desfaz usuário e consentimentos quando a restrição de unicidade falha.
         db.rollback()
+        if data.coren_numero is not None and db.scalar(select(Usuario.id).where(
+            Usuario.coren_numero == data.coren_numero, Usuario.coren_uf == data.coren_uf,
+        )) is not None:
+            raise DuplicateUsuarioError("COREN nesta UF") from error
         raise DuplicateUsuarioError("cpf ou email") from error
     # Refresh devolve o registro com o ID e valores confirmados pelo banco.
     db.refresh(usuario)
@@ -76,7 +92,7 @@ def create_usuario(db: Session, data: UsuarioCreate) -> Usuario:
 def update_usuario(db: Session, usuario: Usuario, data: UsuarioUpdate) -> Usuario:
     # Atualiza os campos do usuário respeitando regras de unicidade e preservando as demais informações.
     _check_duplicates(db, data.cpf, str(data.email), usuario.id)
-    for field, value in data.model_dump().items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(usuario, field, str(value) if field == "email" else value)
     try:
         db.commit()

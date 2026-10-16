@@ -7,9 +7,11 @@ HemocentroStatus = Literal["ATIVO", "INATIVO"]
 
 
 class HemocentroBase(BaseModel):
-    nome: str = Field(min_length=1)
-    endereco: str = Field(min_length=1)
-    telefone: str = Field(min_length=1)
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    nome: str = Field(min_length=1, max_length=255)
+    endereco: str = Field(min_length=1, max_length=500)
+    telefone: str = Field(min_length=1, max_length=30)
     status: HemocentroStatus
 
 

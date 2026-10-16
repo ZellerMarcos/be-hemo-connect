@@ -21,6 +21,14 @@ O campo `ator` identifica a conta pelo e-mail quando ele esta disponivel. O camp
 | `logout` | Encerramento explicito da sessao |
 | `reset_senha_solicitacao` | Solicitacao valida ou usuario indisponivel |
 | `reset_senha` | Redefinicao concluida ou rejeitada |
+| `AGENDAMENTO_CRIADO` | Registro de agendamento pelo doador |
+| `DOADOR_RECEBIDO` | Confirmação de chegada pela recepção |
+| `TRIAGEM_INICIADA` | Enfermeiro assume um atendimento pendente |
+| `TRIAGEM_AVALIACAO_SALVA` | Gravação das observações durante o atendimento |
+| `TRIAGEM_FINALIZADA` | Finalização como apto ou inapto |
+| `TRIAGEM_ENCAMINHADA_MEDICO` | Finalização com encaminhamento médico |
+| `ENFERMEIRO_CADASTRO_PENDENTE` | Solicitação pública de enfermagem persistida com consentimentos |
+| `ENFERMEIRO_APROVADO` | Administrador libera solicitação pendente e vincula o hemocentro |
 
 ## 2. Protecao de dados nos logs
 
@@ -30,6 +38,14 @@ O helper `app.security.audit.registrar_evento` aceita somente campos controlados
 - codigos 2FA;
 - tokens ou URLs de redefinicao;
 - chaves de API e demais segredos de ambiente.
+
+Eventos de atendimento incluem somente `atendimento_id` nos metadados.
+Respostas de pré-triagem e observações clínicas não são registradas na auditoria.
+Eventos de cadastro/aprovação incluem somente `alvo_usuario_id` nos metadados;
+a aprovação identifica o administrador em `user_id`. Não armazenam número
+ou UF do COREN, comprovantes ou dados clínicos no log. A alteração de estado
+e o evento são persistidos na mesma transação.
+No PostgreSQL, o helper serializa a criação dos elos com bloqueio transacional.
 
 Os testes de regressao verificam explicitamente que senha e codigo 2FA nao sao emitidos.
 

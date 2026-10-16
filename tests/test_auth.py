@@ -19,6 +19,7 @@ from app.models.usuario import Usuario
 from app.models.audit_log import AuditLog
 from app.security.two_factor import hash_code
 from app.services.auth import CODE_VALIDITY
+from app.models.auth_session import AuthSession
 
 
 engine = create_engine(
@@ -32,6 +33,7 @@ Base.metadata.create_all(engine)
 @pytest.fixture(autouse=True)
 def clean_database():
     with Session(engine) as session:
+        session.execute(Base.metadata.tables["auth_sessions"].delete())
         session.execute(Base.metadata.tables["audit_logs"].delete())
         session.execute(Base.metadata.tables["consentimentos"].delete())
         session.execute(Base.metadata.tables["two_factor_codes"].delete())
@@ -87,8 +89,13 @@ def user_payload(
 
 
 def create_user(status: str = "ATIVO") -> None:
-    response = client.post("/usuarios", json=user_payload(status))
+    response = client.post("/usuarios", json=user_payload())
     assert response.status_code == 201
+    if status != "ATIVO":
+        with Session(engine) as session:
+            usuario = session.scalar(select(Usuario))
+            usuario.status = status
+            session.commit()
 
 
 def test_login_generates_six_digit_code_and_sends_email():
@@ -177,7 +184,9 @@ def test_valid_code_is_accepted_once():
         json={"email": "joao@example.com", "code": sent_codes[0]},
     )
 
-    assert response.json() == {"authenticated": True, "nome": "Joao Silva"}
+    assert response.json()["authenticated"] is True
+    assert response.json()["usuario"]["nome"] == "Joao Silva"
+    assert response.json()["access_token"]
     assert repeated.status_code == 401
 
 
@@ -240,7 +249,8 @@ def test_new_code_invalidates_previous_code():
     )
 
     assert previous.status_code == 401
-    assert current.json() == {"authenticated": True, "nome": "Joao Silva"}
+    assert current.json()["authenticated"] is True
+    assert current.json()["usuario"]["nome"] == "Joao Silva"
 
 
 def test_inactive_user_cannot_request_code():
@@ -476,12 +486,13 @@ def test_user_session_expires_after_45_minutes_of_inactivity():
     with Session(engine) as session:
         usuario = session.scalar(select(Usuario).where(Usuario.email == "joao@example.com"))
         assert usuario is not None
-        usuario.last_activity_at = datetime.utcnow() - timedelta(minutes=46)
+        active_session = session.scalar(select(AuthSession).where(AuthSession.usuario_id == usuario.id))
+        active_session.last_activity_at = datetime.utcnow() - timedelta(minutes=46)
         session.commit()
 
     response = client.get(
         "/usuarios",
-        headers={"x-user-email": "joao@example.com"},
+        headers={"Authorization": f"Bearer {response.json()['access_token']}"},
     )
 
     assert response.status_code == 401
