@@ -9,8 +9,8 @@ vacinacao, procedimentos e viagens declarados, alem de perguntas confidenciais
 sobre gestacao, amamentacao, historico reprodutivo, PrEP/PEP e exposicoes.
 O formulario e apresentado como etapa fixa das novas reservas. A instituicao
 deve validar perguntas e governanca antes de usar respostas reais; a interface
-nao comprova aprovacao clinica ou juridica. A API exige identificacao institucional
-do controlador e canal de privacidade antes de disponibilizar catalogo/reservas.
+nao comprova aprovacao clinica ou juridica. O catalogo nao depende de variaveis
+de ambiente para nome do controlador ou canal de privacidade.
 
 - Finalidade: pre-triagem e atendimento no hemocentro escolhido; sem classificacao
   clinica automatica nem uso autorizado para marketing ou analytics.
@@ -23,9 +23,11 @@ do controlador e canal de privacidade antes de disponibilizar catalogo/reservas.
 - Ciencia do aviso nao e consentimento generico. A instituicao precisa definir
   base legal adequada aos dados sensiveis e, se necessario, fluxo especifico de
   consentimento/revogacao, inclusive para menores, antes de publicar.
-- O aviso identifica controlador e canal por configuracao institucional. Nao
-  inventar contatos ou prazo de retencao. Ausencia de qualquer valor retorna
-  erro `503`; `PRE_TRIAGEM_PUBLICADA` nao e mais utilizado.
+- O aviso orienta o titular a consultar a politica e os canais oficiais da
+  instituicao. A aplicacao nao injeta nome ou contato por variaveis de ambiente;
+  a instituicao deve disponibilizar seus canais em sua politica institucional.
+  `PRE_TRIAGEM_PUBLICADA`, `PRIVACIDADE_CONTROLADOR` e `PRIVACIDADE_CANAL` nao
+  sao utilizados pelo questionario.
 - No agendamento, a ultima submissao estruturada do mesmo doador e hemocentro
   pode pre-preencher o formulario, somente se as versoes do questionario e aviso
   coincidirem. O endpoint nao retorna confirmacoes anteriores; o doador precisa

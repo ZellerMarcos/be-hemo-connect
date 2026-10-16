@@ -388,19 +388,17 @@ a doacao devem ser informadas a equipe presencialmente.
 2. Validar perguntas, linguagem, limites de coleta, orientacoes sobre vacinas,
    viagens e PrEP/PEP com o servico de hemoterapia. O catalogo e uma proposta
    editorial: nao contem prazos de impedimento nem calcula aptidao.
-3. Definir/documentar controlador, canal institucional, base legal para dados
+3. Documentar controlador e canais institucionais, base legal para dados
    sensiveis, retencao, tratamento de menores e procedimento de correcao.
 4. Conferir HTTPS, autorizacoes, acesso ao banco/backups e descarte. Nao se
    presume criptografia ponta a ponta nem conformidade apenas por exibir um aviso.
-5. Publicar backend compativel e frontend coordenadamente. Configure
-   `PRIVACIDADE_CONTROLADOR` e `PRIVACIDADE_CANAL` com valores institucionais
-   reais; catalogo e novas reservas retornam `503` se algum estiver ausente.
-   Nao usar os dados ficticios das fixtures. Reiniciar o servidor apos alterar
-   o ambiente. `PRE_TRIAGEM_PUBLICADA` foi removida e pode ser apagada do Render.
+5. Publicar backend compativel e frontend coordenadamente. As variaveis
+   `PRE_TRIAGEM_PUBLICADA`, `PRIVACIDADE_CONTROLADOR` e `PRIVACIDADE_CANAL` nao
+   sao necessarias pelo sistema e podem ser removidas do Render. O aviso orienta
+   o usuario a consultar a politica e os canais oficiais da instituicao.
 
-Para testes locais exclusivamente com dados sinteticos, as variaveis institucionais
-podem ser definidas no processo de teste. Esta alteracao nao adiciona tabela ou
-coluna; confirme que o schema existente ja possui `questionario_pre_triagem`.
+Esta alteracao nao adiciona tabela ou coluna; confirme que o schema existente ja
+possui `questionario_pre_triagem`.
 Nenhuma migracao ou alteracao de banco de producao foi executada.
 
 O aviso especifico tem versao propria e ciencia registrada no envio; nao e

@@ -1,4 +1,3 @@
-import os
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Literal
@@ -117,10 +116,6 @@ CONFIRMACOES = [
 
 
 def catalogo() -> CatalogoQuestionario:
-    controlador = os.getenv("PRIVACIDADE_CONTROLADOR", "").strip()
-    canal = os.getenv("PRIVACIDADE_CANAL", "").strip()
-    if not controlador or not canal:
-        raise HTTPException(503, "A instituição precisa configurar o controlador e o canal de privacidade da pré-triagem.")
     aviso = (
         "Estas perguntas incluem dados sensíveis de saúde. As respostas serão usadas na sua "
         "pré-triagem e no atendimento pelo hemocentro escolhido. Você pode consultar e exportar "
@@ -131,10 +126,8 @@ def catalogo() -> CatalogoQuestionario:
         "As respostas não definem sua aptidão para doar. Mudanças na sua saúde até a doação "
         "devem ser informadas à equipe. A confirmação abaixo registra ciência deste aviso, "
         "não autorização genérica para outros usos. Para correção após o envio e demais "
-        "direitos, utilize o canal institucional e consulte a política de privacidade."
+        "direitos, consulte a política de privacidade e os canais oficiais da instituição."
     )
-    if controlador and canal:
-        aviso += f" Controlador: {controlador}. Canal de privacidade: {canal}."
     return CatalogoQuestionario(
         versao=VERSAO, versao_aviso=VERSAO_AVISO, publicado=True, aviso=aviso,
         confirmacoes=CONFIRMACOES, perguntas=PERGUNTAS,

@@ -18,12 +18,10 @@ from app.security.password import hash_password
 from app.security.session import issue_session
 from app.security.session import utcnow
 from tests.test_agenda import book, change_body, config_payload, slots
-from tests.questionario_helpers import publicar_questionario
 
 
 @pytest.fixture()
-def postgres_context(monkeypatch):
-    publicar_questionario(monkeypatch)
+def postgres_context():
     url = os.getenv("TEST_POSTGRES_URL")
     if not url:
         pytest.skip("Defina TEST_POSTGRES_URL para validar concorrencia em PostgreSQL isolado.")
