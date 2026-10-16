@@ -16,10 +16,12 @@ from app.models.agenda import AgendaHemocentro
 from app.security.audit import verificar_integridade
 from app.security.password import hash_password
 from app.security.session import issue_session, utcnow
+from tests.questionario_helpers import publicar_questionario, questionario_payload
 
 
 @pytest.fixture()
-def context(tmp_path):
+def context(tmp_path, monkeypatch):
+    publicar_questionario(monkeypatch)
     engine = create_engine(f"sqlite:///{tmp_path / 'triagens.db'}", connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     headers = {}
@@ -72,7 +74,7 @@ def agendar(context, centro=1, donor="doador"):
     response = client.post("/agendamentos", headers=headers[donor], json={
         "horario_id": slot["id"],
         "chave_requisicao": str(uuid4()),
-        "respostas_pre_triagem": [{"pergunta": "Pergunta institucional", "resposta": "Resposta registrada"}],
+        "questionario": questionario_payload(),
     })
     assert response.status_code == 201, response.text
     return response.json()["id"]
@@ -98,7 +100,8 @@ def test_fluxo_completo(context, resultado):
     inicio = client.post(f"/triagens/{agenda_id}/iniciar", headers=headers["enfermeiro"])
     assert inicio.status_code == 200, inicio.text
     assert inicio.json()["agendamento"]["status"] == "EM_TRIAGEM"
-    assert inicio.json()["pre_triagem"] == [{"pergunta": "Pergunta institucional", "resposta": "Resposta registrada"}]
+    assert inicio.json()["pre_triagem"][0] == {"pergunta": "Qual é seu peso atual, em kg?", "resposta": "70"}
+    assert inicio.json()["questionario"]["versao"] == "pre-triagem-v1"
     saved = client.put(f"/triagens/{agenda_id}", headers=headers["enfermeiro"],
                        json={"observacoes": "Avaliação registrada", "versao": 1})
     assert saved.status_code == 200 and saved.json()["avaliacao"]["versao"] == 2
@@ -268,7 +271,9 @@ def test_privacidade_inclui_novos_dados_e_revoga_acesso(context):
     data = response.json()["titular"]
     assert data["telefone"] == "11999999999" and data["tipo_sanguineo"] == "O+"
     assert data["atendimentos"][0]["observacoes"] == "Registro para exportação"
-    assert data["atendimentos"][0]["pre_triagem"][0]["resposta"] == "Resposta registrada"
+    assert data["atendimentos"][0]["pre_triagem"][0]["resposta"] == "70"
+    assert data["atendimentos"][0]["questionario"]["versao"] == "pre-triagem-v1"
+    assert len(data["atendimentos"][0]["questionario"]["respostas"]) == 14
     assert "enfermeiro_id" not in data["atendimentos"][0]
     assert client.delete("/privacy/me", headers=headers["doador"]).status_code == 200
     assert client.get("/auth/me", headers=headers["doador"]).status_code == 401
@@ -277,6 +282,7 @@ def test_privacidade_inclui_novos_dados_e_revoga_acesso(context):
         usuario = db.get(Usuario, ids["doador"])
         assert usuario.telefone is None and usuario.tipo_sanguineo is None
         assert db.get(Agendamento, agenda_id).respostas_pre_triagem == []
+        assert db.get(Agendamento, agenda_id).questionario_pre_triagem is None
 
 
 def test_limite_exato_inatividade(context):
