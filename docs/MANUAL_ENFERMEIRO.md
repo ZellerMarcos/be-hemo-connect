@@ -17,7 +17,7 @@ critérios para considerar um doador apto ou inapto.
 
 ### Questionario rapido no agendamento
 
-Novas reservas incluem um questionario estruturado e versionado. No detalhe do atendimento, apos a recepcao,
+Novas reservas incluem um questionario estruturado e versionado. No detalhe do atendimento, apos a confirmacao de chegada,
 confira a versao, a data de envio e o aviso apresentado ao doador. Registros antigos
 continuam legiveis e sao identificados como anteriores ao questionario versionado.
 Em novas reservas, o doador pode receber sugestoes das respostas anteriores da
@@ -158,7 +158,12 @@ Se aparecer **“Nenhuma triagem pendente”**, confira os filtros antes de conc
 que não existem doadores aguardando atendimento. Uma mensagem de erro de
 carregamento não deve ser interpretada como fila vazia.
 
-A fila contém somente doadores cuja chegada foi confirmada pela recepção.
+A fila contém somente doadores cuja chegada foi confirmada pela recepção ou
+autodeclarada pelo próprio doador em **Confirmação de Chegada**, na home.
+O doador pode confirmar antecipadamente sua próxima reserva futura, sem código
+ou verificação de localização; essa ação não comprova presença física.
+Confira a identidade e a presença conforme o protocolo institucional.
+Use **Atualizar** para carregar novas chegadas; a fila não é atualizada em tempo real.
 O período dos filtros utiliza datas UTC, conforme indicado nos campos.
 
 ## 5. Conferir os dados do doador

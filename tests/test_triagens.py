@@ -87,6 +87,142 @@ def receber(context):
     return agenda_id
 
 
+def test_proximo_agendamento_vazio_e_isolado(context):
+    client, _, headers, _ = context
+    agendar(context, donor="outro_doador")
+    response = client.get("/agendamentos/proximo", headers=headers["doador"])
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_proximo_agendamento_ordena_por_data_nao_por_criacao(context):
+    client, engine, headers, _ = context
+    primeiro = agendar(context)
+    segundo = agendar(context)
+    with Session(engine) as db:
+        db.get(Agendamento, primeiro).agendado_em = utcnow() + timedelta(days=3)
+        db.commit()
+    response = client.get("/agendamentos/proximo", headers=headers["doador"])
+    assert response.status_code == 200
+    assert response.json()["id"] == segundo
+    assert response.json()["fuso_horario"] == "UTC"
+    assert "respostas_pre_triagem" not in response.json()
+
+
+@pytest.mark.parametrize("situacao", [
+    "CANCELADO", "AGUARDANDO_TRIAGEM", "EM_TRIAGEM", "APTO", "INAPTO",
+    "ENCAMINHADO_MEDICO", "PASSADO", "RECEBIDO",
+])
+def test_proximo_agendamento_ignora_reservas_inelegiveis(context, situacao):
+    client, engine, headers, _ = context
+    primeiro = agendar(context)
+    segundo = agendar(context)
+    with Session(engine) as db:
+        agenda = db.get(Agendamento, primeiro)
+        if situacao == "PASSADO":
+            agenda.agendado_em = utcnow() - timedelta(seconds=1)
+        elif situacao == "RECEBIDO":
+            agenda.recebido_em = utcnow()
+        else:
+            agenda.status = situacao
+        db.commit()
+    assert client.get("/agendamentos/proximo", headers=headers["doador"]).json()["id"] == segundo
+    response = client.post(f"/agendamentos/{primeiro}/confirmar-chegada",
+                           headers=headers["doador"], json={"versao": 1})
+    assert response.status_code == 409
+
+
+def test_doador_confirma_chegada_antecipada_e_libera_enfermagem(context):
+    client, engine, headers, ids = context
+    agenda_id = agendar(context)
+    assert client.get("/triagens", headers=headers["enfermeiro"]).json()["total"] == 0
+    response = client.post(f"/agendamentos/{agenda_id}/confirmar-chegada",
+                           headers=headers["doador"], json={"versao": 1})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "AGUARDANDO_TRIAGEM"
+    assert body["recebido_em"].endswith("+00:00")
+    assert body["versao"] == 2
+    assert body["pode_cancelar"] is False and body["pode_remarcar"] is False
+    assert client.get("/agendamentos/proximo", headers=headers["doador"]).json() is None
+    assert client.get("/recepcao/agendamentos", headers=headers["recepcao"]).json()["total"] == 0
+    assert client.get("/triagens/indicadores", headers=headers["enfermeiro"]).json()["pendentes"] == 1
+    fila = client.get("/triagens?status=AGUARDANDO_TRIAGEM", headers=headers["enfermeiro"]).json()
+    assert fila["itens"][0]["id"] == agenda_id
+    assert client.get("/triagens", headers=headers["externo"]).json()["total"] == 0
+    detalhe = client.get(f"/triagens/{agenda_id}", headers=headers["enfermeiro"]).json()
+    assert detalhe["pre_triagem"][0]["resposta"] == "70"
+    assert detalhe["questionario"]["versao"] == "pre-triagem-v1"
+    for acao in ("cancelar", "remarcar"):
+        data = {"versao": 2, "chave_requisicao": str(uuid4())}
+        if acao == "remarcar":
+            data["horario_id"] = body["horario_id"]
+        assert client.post(f"/agendamentos/{agenda_id}/{acao}",
+                           headers=headers["doador"], json=data).status_code == 409
+    assert client.post(f"/agendamentos/{agenda_id}/confirmar-chegada",
+                       headers=headers["doador"], json={"versao": 1}).status_code == 409
+    with Session(engine) as db:
+        agenda = db.get(Agendamento, agenda_id)
+        assert agenda.recebido_por == ids["doador"]
+        eventos = db.scalars(select(AuditLog).where(AuditLog.event_type == "DOADOR_RECEBIDO")).all()
+        assert len(eventos) == 1
+        assert eventos[0].user_id == ids["doador"]
+        assert eventos[0].metadata_json == {"motivo": "autodeclaracao_doador", "atendimento_id": agenda_id}
+        assert verificar_integridade(db) == (True, None)
+
+
+def test_chegada_exige_proxima_reserva_propria_e_versao_atual(context):
+    client, engine, headers, _ = context
+    primeiro = agendar(context)
+    segundo = agendar(context)
+    path = f"/agendamentos/{primeiro}/confirmar-chegada"
+    assert client.post(path, headers=headers["outro_doador"], json={"versao": 1}).status_code == 404
+    assert client.post("/agendamentos/99999/confirmar-chegada",
+                       headers=headers["doador"], json={"versao": 1}).status_code == 404
+    assert client.post(f"/agendamentos/{segundo}/confirmar-chegada",
+                       headers=headers["doador"], json={"versao": 1}).status_code == 409
+    with Session(engine) as db:
+        db.get(Agendamento, primeiro).versao = 2
+        db.commit()
+    assert client.post(path, headers=headers["doador"], json={"versao": 1}).status_code == 409
+    assert client.get("/triagens", headers=headers["enfermeiro"]).json()["total"] == 0
+    assert client.post(path, headers=headers["doador"], json={"versao": 2}).status_code == 200
+
+
+def test_chegada_pelo_doador_concorre_com_recepcao(context):
+    client, engine, headers, _ = context
+    agenda_id = agendar(context)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(client.post, path, headers=headers[role], json={"versao": 1})
+            for role, path in [
+                ("doador", f"/agendamentos/{agenda_id}/confirmar-chegada"),
+                ("recepcao", f"/recepcao/agendamentos/{agenda_id}/receber"),
+            ]
+        ]
+        assert sorted(future.result().status_code for future in futures) == [200, 409]
+    with Session(engine) as db:
+        assert db.get(Agendamento, agenda_id).versao == 2
+        assert len(db.scalars(select(AuditLog).where(AuditLog.event_type == "DOADOR_RECEBIDO")).all()) == 1
+
+
+@pytest.mark.parametrize("role", ["enfermeiro", "recepcao", "admin", "medico"])
+def test_chegada_propria_restrita_ao_doador(context, role):
+    client, _, headers, _ = context
+    assert client.get("/agendamentos/proximo", headers=headers[role]).status_code == 403
+    assert client.post("/agendamentos/1/confirmar-chegada",
+                       headers=headers[role], json={"versao": 1}).status_code == 403
+
+
+def test_chegada_propria_exige_autenticacao_e_corpo_valido(context):
+    client, _, headers, _ = context
+    assert client.get("/agendamentos/proximo").status_code == 401
+    assert client.post("/agendamentos/1/confirmar-chegada", json={"versao": 1}).status_code == 401
+    for body in ({}, {"versao": 0}, {"versao": 1, "doador_id": 2}):
+        assert client.post("/agendamentos/1/confirmar-chegada",
+                           headers=headers["doador"], json=body).status_code == 422
+
+
 @pytest.mark.parametrize("resultado", ["APTO", "INAPTO", "ENCAMINHADO_MEDICO"])
 def test_fluxo_completo(context, resultado):
     client, engine, headers, _ = context

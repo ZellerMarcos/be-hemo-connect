@@ -310,6 +310,8 @@ sao omitidos com aviso. E necessario salvar a agenda como publicada para reserva
 | GET | `/questionario-pre-triagem` | Doador: catalogo versionado, aviso, alternativas, dependencias e confirmacoes. |
 | POST | `/agendamentos` | Doador: reservar `horario_id`, `chave_requisicao` UUID e `questionario` obrigatorio. |
 | GET | `/agendamentos/me` | Reservas proprias, prazos, acoes permitidas e historico de alteracoes. |
+| GET | `/agendamentos/proximo` | Doador: proxima reserva futura, ainda agendada e sem chegada; `null` quando ausente. |
+| POST | `/agendamentos/{id}/confirmar-chegada` | Doador: autodeclarar chegada ao proximo agendamento proprio, enviando a `versao` atual. |
 | POST | `/agendamentos/{id}/cancelar` | Doador: `versao` e `chave_requisicao` UUID. |
 | POST | `/agendamentos/{id}/remarcar` | Doador: mesmos campos mais `horario_id` da mesma unidade. |
 | POST | `/recepcao/agendamentos/{id}/receber` | Recepcao autorizada: `versao` exibida na lista, para rejeitar reservas desatualizadas. |
@@ -330,6 +332,28 @@ Cancelamento preserva o registro, grava `CANCELADO` e libera capacidade; cancela
 nao entram na recepcao/enfermagem. Chegada confirmada impede alteracoes pelo doador.
 O historico integra a consulta/exportacao LGPD. A anonimizacao cancela reservas
 futuras ainda pendentes para liberar as vagas, sem apagar o historico clinico.
+
+### Confirmacao de chegada pelo doador
+
+Na home do doador, **Confirmacao de Chegada** abre `/confirmacao-chegada` no
+frontend e apresenta a proxima reserva por data/hora (desempate pelo ID), com
+unidade, endereco e fuso. Somente reservas `AGENDADO`, sem recebimento e com
+horario maior ou igual ao instante da consulta sao elegiveis. Reservas passadas,
+canceladas ou ja recebidas nao entram nessa selecao.
+
+Por decisao do fluxo, nao ha janela minima de antecedencia, geolocalizacao nem
+codigo/QR Code: a confirmacao e uma autodeclaracao e pode ocorrer antes do dia
+agendado. A interface orienta confirmar apenas quando o doador ja estiver na
+unidade. Isso significa que a fila pode conter reservas de dias futuros apos a
+autodeclaracao; o sistema nao comprova presenca fisica.
+
+A confirmacao reutiliza a transicao para `AGUARDANDO_TRIAGEM`, registra
+`recebido_em`, o proprio doador em `recebido_por` e incrementa `versao`.
+O evento `DOADOR_RECEBIDO` identifica `motivo=autodeclaracao_doador`.
+A enfermagem vinculada a unidade passa a consultar o atendimento e a pre-triagem
+ao atualizar sua lista. Cancelamento/remarcacao ficam bloqueados. A confirmacao
+pela recepcao continua disponivel; repeticao, versao antiga ou reserva que deixou
+de ser a proxima retornam `409`, exigindo nova consulta. Nao ha nova migration.
 
 ### Formulario rapido de pre-triagem
 

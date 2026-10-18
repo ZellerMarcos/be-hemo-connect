@@ -13,7 +13,7 @@ from app.schemas.triagem import (
 from app.security.audit import registrar_evento
 from app.security.authorization import require_hemocentro
 from app.security.session import utcnow
-from app.services.agenda import reservar
+from app.services.agenda import reservar, reserva_propria, resposta_reserva
 from app.schemas.agenda import ReservaResponse
 from app.services.questionario import metadados
 
@@ -35,6 +35,24 @@ def get_scoped_agendamento(db: Session, usuario: Usuario, agendamento_id: int) -
 
 def create_agendamento(db: Session, usuario: Usuario, data: AgendamentoCreate) -> ReservaResponse:
     return reservar(db, usuario, data)
+
+
+def proximo_agendamento(db: Session, usuario: Usuario) -> Agendamento | None:
+    return db.scalar(select(Agendamento).where(
+        Agendamento.doador_id == usuario.id,
+        Agendamento.status == "AGENDADO",
+        Agendamento.recebido_em.is_(None),
+        Agendamento.agendado_em >= utcnow(),
+    ).order_by(Agendamento.agendado_em, Agendamento.id).limit(1))
+
+
+def confirmar_chegada(db: Session, usuario: Usuario, agendamento_id: int, versao: int) -> ReservaResponse:
+    agenda, _ = reserva_propria(db, usuario, agendamento_id)
+    proximo = proximo_agendamento(db, usuario)
+    if proximo is None or proximo.id != agenda.id:
+        raise HTTPException(409, "Somente o proximo agendamento futuro pode ter a chegada confirmada. Atualize a consulta.")
+    receber(db, usuario, agenda.id, versao)
+    return resposta_reserva(db, agenda)
 
 
 def query_fila(usuario: Usuario, *, status: str | None = None, busca: str | None = None,
@@ -140,7 +158,8 @@ def receber(db: Session, usuario: Usuario, agendamento_id: int, versao: int) -> 
     if changed.rowcount != 1:
         db.rollback()
         raise HTTPException(409, "A chegada já foi confirmada ou o atendimento mudou.")
-    registrar_evento(db, "DOADOR_RECEBIDO", "sucesso", user_id=usuario.id, atendimento_id=agenda.id)
+    registrar_evento(db, "DOADOR_RECEBIDO", "sucesso", user_id=usuario.id, atendimento_id=agenda.id,
+                     motivo="autodeclaracao_doador" if usuario.perfil == "DOADOR" else None)
     db.refresh(agenda)
     return agenda
 

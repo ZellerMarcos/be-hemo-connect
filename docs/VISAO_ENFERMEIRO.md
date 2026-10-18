@@ -4,11 +4,17 @@
 
 O fluxo mínimo integrado é:
 
-`DOADOR: agendamento + respostas → RECEPÇÃO: chegada → ENFERMEIRO: início →
+`DOADOR: agendamento + respostas → DOADOR ou RECEPÇÃO: chegada → ENFERMEIRO: início →
 avaliação → APTO / INAPTO / ENCAMINHADO_MEDICO → histórico de triagens`.
 
 As telas são mantidas no repositório irmão `fe-hemo-connect`.
 Não há registros fictícios nem avaliação clínica automática.
+
+O doador pode autodeclarar a chegada à próxima reserva futura pela home, sem
+janela de antecedência ou prova de localização. A confirmação registra o próprio
+doador como autor e libera a mesma fila da recepção. Reservas futuras podem,
+portanto, aparecer como aguardando triagem. Consulte as regras de
+[confirmação de chegada](../README.md#confirmacao-de-chegada-pelo-doador).
 
 ## Implantação
 
@@ -133,6 +139,8 @@ a **triagens finalizadas**, sem simular coleta ou doação.
 | POST | `/agendamentos/{id}/cancelar` | Doador: cancelar reserva própria pendente, dentro do prazo, com versão e UUID. |
 | POST | `/agendamentos/{id}/remarcar` | Doador: trocar o horário na mesma unidade, dentro do prazo, com versão e UUID. |
 | GET | `/agendamentos/me` | Doador: seus próprios agendamentos. |
+| GET | `/agendamentos/proximo` | Doador: próxima reserva futura ainda agendada e sem chegada, ou `null`. |
+| POST | `/agendamentos/{id}/confirmar-chegada` | Doador: autodeclarar chegada à próxima reserva própria, com a versão atual. |
 | GET | `/historico/me` | Doador: suas próprias triagens finalizadas. |
 | GET | `/recepcao/agendamentos` | Recepção autorizada: agendamentos aguardando chegada. |
 | POST | `/recepcao/agendamentos/{id}/receber` | Recepção autorizada: confirmar chegada enviando `{"versao": 1}` com a versão atual da lista. |
