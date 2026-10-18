@@ -92,6 +92,18 @@ def meus_agendamentos(db: Session = Depends(get_db), usuario: Usuario = Depends(
     return [resposta_reserva(db, agenda) for agenda in agendas]
 
 
+@router.get("/agendamentos/proximo", response_model=ReservaResponse | None)
+def proximo_agendamento(db: Session = Depends(get_db), usuario: Usuario = Depends(doador)):
+    agenda = service.proximo_agendamento(db, usuario)
+    return resposta_reserva(db, agenda) if agenda is not None else None
+
+
+@router.post("/agendamentos/{agendamento_id}/confirmar-chegada", response_model=ReservaResponse)
+def confirmar_chegada(agendamento_id: int, data: ConfirmarChegada,
+                     db: Session = Depends(get_db), usuario: Usuario = Depends(doador)):
+    return service.confirmar_chegada(db, usuario, agendamento_id, data.versao)
+
+
 @router.get("/historico/me", response_model=list[HistoricoItem])
 def meu_historico(db: Session = Depends(get_db), usuario: Usuario = Depends(doador)):
     return service.historico(db, usuario, usuario.id)

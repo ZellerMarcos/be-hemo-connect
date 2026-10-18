@@ -334,7 +334,7 @@ def reservar(db: Session, usuario: Usuario, data: AgendamentoCreate) -> ReservaR
     return resposta_reserva(db, agenda)
 
 
-def _reserva_propria(db: Session, usuario: Usuario, agenda_id: int) -> tuple[Agendamento, Hemocentro]:
+def reserva_propria(db: Session, usuario: Usuario, agenda_id: int) -> tuple[Agendamento, Hemocentro]:
     centro_id = db.scalar(select(Agendamento.hemocentro_id).where(
         Agendamento.id == agenda_id, Agendamento.doador_id == usuario.id,
     ))
@@ -363,7 +363,7 @@ def _repetida(db: Session, agenda: Agendamento, data: AlteracaoRequest, acao: st
 
 
 def cancelar(db: Session, usuario: Usuario, agenda_id: int, data: AlteracaoRequest) -> ReservaResponse:
-    agenda, _ = _reserva_propria(db, usuario, agenda_id)
+    agenda, _ = reserva_propria(db, usuario, agenda_id)
     if _repetida(db, agenda, data, "CANCELADO") or agenda.status == "CANCELADO":
         return resposta_reserva(db, agenda)
     if data.versao != agenda.versao:
@@ -383,7 +383,7 @@ def cancelar(db: Session, usuario: Usuario, agenda_id: int, data: AlteracaoReque
 
 
 def remarcar(db: Session, usuario: Usuario, agenda_id: int, data: RemarcacaoRequest) -> ReservaResponse:
-    agenda, centro = _reserva_propria(db, usuario, agenda_id)
+    agenda, centro = reserva_propria(db, usuario, agenda_id)
     if _repetida(db, agenda, data, "REMARCADO", data.horario_id):
         return resposta_reserva(db, agenda)
     if data.versao != agenda.versao:
