@@ -1,24 +1,56 @@
 import hashlib
 import hmac
+import json
 import secrets
 
 
 CODE_LENGTH = 6
+VERIFIER_FORMAT = "challenge-secret-v1"
 
 
 def generate_code() -> str:
-    # `secrets` evita códigos previsíveis; o preenchimento mantém seis dígitos,
-    # inclusive quando o código começa com zero.
     return f"{secrets.randbelow(10**CODE_LENGTH):0{CODE_LENGTH}d}"
 
 
-def hash_code(code: str) -> str:
-    # O código temporário não precisa ser recuperado, apenas comparado.
-    # Este SHA-256 é usado somente para o código 2FA, nunca para senhas.
-    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+def generate_challenge_nonce() -> str:
+    return secrets.token_hex(16)
 
 
-def verify_code(code: str, code_hash: str) -> bool:
-    # A comparação em tempo constante reduz diferenças observáveis entre
-    # tentativas com prefixos coincidentes.
-    return hmac.compare_digest(hash_code(code), code_hash)
+def generate_challenge_secret() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_challenge_secret(secret: str) -> str:
+    return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
+
+def hash_code(
+    code: str,
+    *,
+    usuario_id: int,
+    challenge_nonce: str,
+    challenge_secret: str,
+) -> str:
+    payload = json.dumps(
+        ["hemo-connect:2fa", VERIFIER_FORMAT, usuario_id, challenge_nonce, code],
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hmac.new(challenge_secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def verify_code(
+    code: str,
+    code_hash: str,
+    *,
+    usuario_id: int,
+    challenge_nonce: str,
+    challenge_secret: str,
+) -> bool:
+    expected = hash_code(
+        code,
+        usuario_id=usuario_id,
+        challenge_nonce=challenge_nonce,
+        challenge_secret=challenge_secret,
+    )
+    return hmac.compare_digest(expected, code_hash)

@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from tests.session_helpers import two_factor_payload
 from app.main import app
 from app.models import Agendamento, AuditLog, AuthSession, Hemocentro, Triagem, Usuario
 from app.models.hemocentro import Base
@@ -349,10 +350,10 @@ def test_filtros_paginacao_e_estado_vazio(context):
 def test_sessao_2fa_logout_expiracao_e_reset(context):
     client, engine, headers, ids = context
     with patch("app.services.auth.send_two_factor_code") as send:
-        assert client.post("/auth/login", json={"email": "enfermeiro@example.com",
-                                               "senha": "SenhaSegura123!"}).json() == {"requires_2fa": True}
-    response = client.post("/auth/2fa/verify", json={"email": "enfermeiro@example.com",
-                                                  "code": send.call_args.args[1]})
+        login = client.post("/auth/login", json={"email": "enfermeiro@example.com",
+                                               "senha": "SenhaSegura123!"})
+        assert login.json()["requires_2fa"] is True
+    response = client.post("/auth/2fa/verify", json=two_factor_payload(login, send.call_args.args[1]))
     assert response.status_code == 200
     assert response.json()["usuario"]["perfil"] == "ENFERMEIRO"
     assert response.json()["usuario"]["id"] == ids["enfermeiro"]

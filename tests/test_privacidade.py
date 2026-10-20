@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.database import get_db
+from tests.session_helpers import two_factor_payload
 from app.main import app
 from app.models.consentimento import Consentimento
 from app.models.hemocentro import Base
@@ -99,7 +100,7 @@ def authenticated_user() -> dict[str, object]:
     code = send_email.call_args.args[1]
     verify = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": code},
+        json=two_factor_payload(response, code),
     )
     assert verify.status_code == 200
     return {

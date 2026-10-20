@@ -6,7 +6,9 @@ os.environ.setdefault("APP_ENV", "test")
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from fastapi import HTTPException
+from sqlalchemy import create_engine, select, func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -17,11 +19,22 @@ from app.models.password_reset_token import PasswordResetToken
 from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
 from app.models.audit_log import AuditLog
-from app.security.two_factor import hash_code
 from app.services.auth import CODE_VALIDITY
 from app.models.auth_session import AuthSession
 from app.models.email_change_token import EmailChangeToken
-from tests.session_helpers import auth_headers
+from app.models.rate_limit_counter import RateLimitCounter
+from app.security.audit import verificar_integridade
+from app.security.session import issue_session
+from app.security.rate_limit import request_origin, enforce_rate_limit
+from app.security.two_factor import (
+    VERIFIER_FORMAT,
+    generate_challenge_nonce,
+    generate_challenge_secret,
+    hash_challenge_secret,
+    hash_code,
+)
+from tests.session_helpers import auth_headers, two_factor_payload
+from starlette.requests import Request
 
 
 engine = create_engine(
@@ -41,6 +54,7 @@ def clean_database():
         session.execute(Base.metadata.tables["two_factor_codes"].delete())
         session.execute(Base.metadata.tables["password_reset_tokens"].delete())
         session.execute(Base.metadata.tables["email_change_tokens"].delete())
+        session.execute(Base.metadata.tables["rate_limit_counters"].delete())
         session.execute(Base.metadata.tables["usuarios"].delete())
         session.commit()
 
@@ -118,7 +132,11 @@ def test_login_generates_six_digit_code_and_sends_email():
         )
 
     assert response.status_code == 200
-    assert response.json() == {"requires_2fa": True}
+    assert response.json()["requires_2fa"] is True
+    assert len(response.json()["challenge_id"]) == 32
+    assert len(response.json()["challenge_secret"]) == 43
+    assert response.json()["expires_in"] == 300
+    assert "access_token" not in response.json()
     assert len(sent_codes) == 1
     assert recipients == ["joao@example.com"]
     assert sent_codes[0].isdigit() and len(sent_codes[0]) == 6
@@ -127,6 +145,8 @@ def test_login_generates_six_digit_code_and_sends_email():
         stored = session.scalar(select(TwoFactorCode))
         assert stored is not None
         assert stored.code_hash != sent_codes[0]
+        assert stored.challenge_token_hash == hash_challenge_secret(response.json()["challenge_secret"])
+        assert stored.verifier_format == VERIFIER_FORMAT
         assert stored.expires_at - stored.created_at == CODE_VALIDITY
 
 
@@ -145,7 +165,7 @@ def test_authentication_events_are_saved_in_database():
 
     verify = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": sent_codes[0]},
+        json=two_factor_payload(login, sent_codes[0]),
     )
     assert verify.status_code == 200
 
@@ -173,18 +193,18 @@ def test_valid_code_is_accepted_once():
         "app.services.auth.send_two_factor_code",
         side_effect=lambda recipient, code: sent_codes.append(code),
     ):
-        client.post(
+        login = client.post(
             "/auth/login",
             json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
         )
 
     response = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": sent_codes[0]},
+        json=two_factor_payload(login, sent_codes[0]),
     )
     repeated = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": sent_codes[0]},
+        json=two_factor_payload(login, sent_codes[0]),
     )
 
     assert response.json()["authenticated"] is True
@@ -196,14 +216,14 @@ def test_valid_code_is_accepted_once():
 def test_incorrect_code_is_rejected():
     create_user()
     with patch("app.services.auth.send_two_factor_code"):
-        client.post(
+        login = client.post(
             "/auth/login",
             json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
         )
 
     response = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": "000000"},
+        json=two_factor_payload(login, "000000"),
     )
 
     assert response.status_code == 401
@@ -213,7 +233,7 @@ def test_incorrect_code_is_rejected():
 def test_expired_code_is_rejected():
     create_user()
     with patch("app.services.auth.send_two_factor_code"):
-        client.post(
+        login = client.post(
             "/auth/login",
             json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
         )
@@ -225,7 +245,7 @@ def test_expired_code_is_rejected():
 
     response = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": "000000"},
+        json=two_factor_payload(login, "000000"),
     )
 
     assert response.status_code == 401
@@ -239,16 +259,16 @@ def test_new_code_invalidates_previous_code():
         side_effect=lambda recipient, code: sent_codes.append(code),
     ):
         login = {"email": "joao@example.com", "senha": "SenhaSegura123!"}
-        client.post("/auth/login", json=login)
-        client.post("/auth/login", json=login)
+        first_login = client.post("/auth/login", json=login)
+        second_login = client.post("/auth/login", json=login)
 
     previous = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": sent_codes[0]},
+        json=two_factor_payload(first_login, sent_codes[0]),
     )
     current = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": sent_codes[1]},
+        json=two_factor_payload(second_login, sent_codes[1]),
     )
 
     assert previous.status_code == 401
@@ -315,7 +335,7 @@ def test_password_reset_token_updates_password():
             json={"email": "joao@example.com", "senha": "NovaSenha123!"},
         )
     assert login_response.status_code == 200
-    assert login_response.json() == {"requires_2fa": True}
+    assert login_response.json()["requires_2fa"] is True
 
 
 def test_invalid_password_reset_token_is_rejected():
@@ -572,14 +592,14 @@ def test_user_session_expires_after_45_minutes_of_inactivity():
         "app.services.auth.send_two_factor_code",
         side_effect=lambda recipient, code: sent_codes.append(code),
     ):
-        client.post(
+        login = client.post(
             "/auth/login",
             json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
         )
 
     response = client.post(
         "/auth/2fa/verify",
-        json={"email": "joao@example.com", "code": sent_codes[0]},
+        json=two_factor_payload(login, sent_codes[0]),
     )
     assert response.status_code == 200
 
@@ -638,7 +658,7 @@ def test_authentication_events_are_registered_for_audit(caplog):
 def test_invalid_two_factor_event_does_not_expose_code(caplog):
     create_user()
     with patch("app.services.auth.send_two_factor_code"):
-        client.post(
+        login = client.post(
             "/auth/login",
             json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
         )
@@ -646,7 +666,7 @@ def test_invalid_two_factor_event_does_not_expose_code(caplog):
     with caplog.at_level("WARNING", logger="app.audit"):
         response = client.post(
             "/auth/2fa/verify",
-            json={"email": "joao@example.com", "code": "000000"},
+            json=two_factor_payload(login, "000000"),
         )
 
     assert response.status_code == 401
@@ -667,4 +687,290 @@ def test_code_is_not_exposed_in_api_response_or_logs(caplog):
     assert "code" not in response.json()
     assert code not in caplog.text
     assert code not in response.text
-    assert hash_code(code) not in response.text
+
+
+def test_two_factor_hmac_is_bound_to_user_and_challenge():
+    first_nonce = generate_challenge_nonce()
+    second_nonce = generate_challenge_nonce()
+    secret = generate_challenge_secret()
+
+    first = hash_code(
+        "123456",
+        usuario_id=1,
+        challenge_nonce=first_nonce,
+        challenge_secret=secret,
+    )
+    other_user = hash_code(
+        "123456",
+        usuario_id=2,
+        challenge_nonce=first_nonce,
+        challenge_secret=secret,
+    )
+    other_challenge = hash_code(
+        "123456",
+        usuario_id=1,
+        challenge_nonce=second_nonce,
+        challenge_secret=secret,
+    )
+
+    assert len({first, other_user, other_challenge}) == 3
+
+
+def test_two_factor_challenge_is_invalidated_after_five_errors():
+    create_user()
+    sent_codes: list[str] = []
+    with patch("app.services.auth.generate_code", return_value="123456"), patch(
+        "app.services.auth.send_two_factor_code",
+        side_effect=lambda recipient, code: sent_codes.append(code),
+    ):
+        login = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
+
+    for _ in range(5):
+        rejected = client.post(
+            "/auth/2fa/verify",
+            json=two_factor_payload(login, "000000"),
+        )
+        assert rejected.status_code == 401
+
+    correct_after_limit = client.post(
+        "/auth/2fa/verify",
+        json=two_factor_payload(login, sent_codes[0]),
+    )
+    assert correct_after_limit.status_code == 401
+    with Session(engine) as session:
+        challenge = session.scalar(select(TwoFactorCode))
+        assert challenge.failed_attempts == 5
+        assert challenge.used_at is not None
+
+
+def test_password_reset_rate_limit_returns_retry_after(real_rate_limits):
+
+    for _ in range(3):
+        response = client.post(
+            "/auth/forgot-password",
+            json={"email": "ausente@example.com"},
+        )
+        assert response.status_code == 200
+
+    limited = client.post(
+        "/auth/forgot-password",
+        json={"email": "ausente@example.com"},
+    )
+
+    assert limited.status_code == 429
+    assert int(limited.headers["Retry-After"]) > 0
+    assert limited.json()["detail"] == "Muitas tentativas. Aguarde antes de tentar novamente."
+
+
+def test_two_factor_send_rate_limit_blocks_fourth_code(real_rate_limits):
+    create_user()
+    with patch("app.services.auth.send_two_factor_code") as send:
+        for _ in range(3):
+            response = client.post(
+                "/auth/login",
+                json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+            )
+            assert response.status_code == 200
+
+        limited = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
+
+    assert limited.status_code == 429
+    assert int(limited.headers["Retry-After"]) > 0
+    assert send.call_count == 3
+
+
+def test_forwarded_origin_is_not_read_by_application():
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/auth/login",
+        "headers": [(b"x-forwarded-for", b"203.0.113.20")],
+        "client": ("198.51.100.10", 12345),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "query_string": b"",
+    }
+    request = Request(scope)
+
+    assert request_origin(request) == "198.51.100.10"
+
+
+def start_challenge():
+    with patch("app.services.auth.generate_code", return_value="123456"), patch(
+        "app.services.auth.send_two_factor_code",
+    ):
+        response = client.post(
+            "/auth/login",
+            json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+        )
+    assert response.status_code == 200
+    return response
+
+
+def test_wrong_secret_does_not_consume_legitimate_code_attempts(caplog):
+    create_user()
+    login = start_challenge()
+    body = two_factor_payload(login, "123456")
+    body["challenge_secret"] = generate_challenge_secret()
+    for _ in range(6):
+        assert client.post("/auth/2fa/verify", json=body).status_code == 401
+    with Session(engine) as db:
+        challenge = db.scalar(select(TwoFactorCode))
+        assert challenge.failed_attempts == 0
+        assert challenge.used_at is None
+    assert client.post(
+        "/auth/2fa/verify", json=two_factor_payload(login, "123456"),
+    ).status_code == 200
+    assert body["challenge_secret"] not in caplog.text
+    assert login.json()["challenge_secret"] not in caplog.text
+
+
+def test_legacy_email_only_verification_is_rejected_without_secret():
+    create_user()
+    start_challenge()
+    response = client.post(
+        "/auth/2fa/verify",
+        json={"email": "joao@example.com", "code": "123456"},
+    )
+    assert response.status_code == 422
+    with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(AuthSession)) == 0
+
+
+def test_secret_cannot_be_mixed_with_another_users_challenge():
+    create_user()
+    first = start_challenge()
+    assert client.post(
+        "/usuarios", json=user_payload(email="maria@example.com", cpf="98765432109"),
+    ).status_code == 201
+    with patch("app.services.auth.generate_code", return_value="123456"), patch(
+        "app.services.auth.send_two_factor_code",
+    ):
+        second = client.post(
+            "/auth/login",
+            json={"email": "maria@example.com", "senha": "SenhaSegura123!"},
+        )
+    mixed = two_factor_payload(first, "123456")
+    mixed["challenge_id"] = second.json()["challenge_id"]
+    assert client.post("/auth/2fa/verify", json=mixed).status_code == 401
+    assert client.post(
+        "/auth/2fa/verify", json=two_factor_payload(first, "123456"),
+    ).status_code == 200
+    assert client.post(
+        "/auth/2fa/verify", json=two_factor_payload(second, "123456"),
+    ).status_code == 200
+
+
+def test_legacy_verifier_is_rejected_even_when_secret_matches():
+    create_user()
+    login = start_challenge()
+    with Session(engine) as db:
+        challenge = db.scalar(select(TwoFactorCode))
+        challenge.verifier_format = "legacy-hmac-v1"
+        db.commit()
+    assert client.post(
+        "/auth/2fa/verify", json=two_factor_payload(login, "123456"),
+    ).status_code == 401
+
+
+def test_session_failure_rolls_back_challenge_audit_and_session():
+    create_user()
+    login = start_challenge()
+
+    def fail_after_session(db, usuario, *, commit):
+        issue_session(db, usuario, commit=commit)
+        raise SQLAlchemyError("synthetic transaction failure")
+
+    with patch("app.services.auth.issue_session", side_effect=fail_after_session):
+        with pytest.raises(SQLAlchemyError):
+            client.post("/auth/2fa/verify", json=two_factor_payload(login, "123456"))
+    with Session(engine) as db:
+        assert db.scalar(select(TwoFactorCode)).used_at is None
+        assert db.scalar(select(func.count()).select_from(AuthSession)) == 0
+        assert db.scalar(select(func.count()).select_from(AuditLog).where(
+            AuditLog.event_type.in_(["sessao", "2fa_validacao"]),
+            AuditLog.status == "sucesso",
+        )) == 0
+        assert verificar_integridade(db) == (True, None)
+    assert client.post(
+        "/auth/2fa/verify", json=two_factor_payload(login, "123456"),
+    ).status_code == 200
+    with Session(engine) as db:
+        assert verificar_integridade(db) == (True, None)
+
+
+def test_validation_errors_and_caching_do_not_expose_credentials(caplog):
+    secret = generate_challenge_secret()
+    response = client.post("/auth/2fa/verify", json={
+        "challenge_id": "invalid",
+        "challenge_secret": secret,
+        "code": "123456",
+        "senha": "NeverEchoThisPassword!",
+    })
+    assert response.status_code == 422
+    assert response.headers["Cache-Control"] == "no-store"
+    for value in (secret, "123456", "NeverEchoThisPassword!"):
+        assert value not in response.text
+        assert value not in caplog.text
+    create_user()
+    login = start_challenge()
+    assert login.headers["Cache-Control"] == "no-store"
+    verified = client.post("/auth/2fa/verify", json=two_factor_payload(login, "123456"))
+    assert verified.headers["Cache-Control"] == "no-store"
+    assert secret not in verified.text
+    assert login.json()["challenge_secret"] not in verified.text
+
+
+def test_login_works_without_new_environment_variables(monkeypatch):
+    for name in (
+        "TWO_FACTOR_HMAC_KEYS", "TWO_FACTOR_ACTIVE_KEY_VERSION",
+        "RATE_LIMIT_HMAC_KEY", "RATE_LIMITING_ENABLED", "TRUSTED_PROXY_IPS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    create_user()
+    login = start_challenge()
+    assert client.post(
+        "/auth/2fa/verify", json=two_factor_payload(login, "123456"),
+    ).status_code == 200
+
+
+def test_rate_limit_window_resets_at_exact_boundary(real_rate_limits):
+    from app.security import rate_limit
+
+    now = datetime(2026, 10, 20, 12)
+    arguments = dict(
+        action="boundary", scope="account", identifier="user@example.com",
+        limit=2, window=timedelta(minutes=15),
+    )
+    with Session(engine) as db, patch.object(rate_limit, "_utcnow", return_value=now):
+        enforce_rate_limit(db, **arguments)
+        enforce_rate_limit(db, **arguments)
+        with pytest.raises(HTTPException) as limited:
+            enforce_rate_limit(db, **arguments)
+        assert limited.value.status_code == 429
+        assert limited.value.headers["Retry-After"] == "900"
+    with Session(engine) as db, patch.object(
+        rate_limit, "_utcnow", return_value=now + timedelta(minutes=15),
+    ):
+        enforce_rate_limit(db, **arguments)
+        assert db.scalar(select(RateLimitCounter)).attempts == 1
+
+
+def test_rate_limit_database_failure_is_explicit_and_sanitized(real_rate_limits, caplog):
+    with Session(engine) as db, patch.object(
+        db, "execute", side_effect=SQLAlchemyError("NeverEchoDatabaseCredentials"),
+    ):
+        with pytest.raises(HTTPException) as unavailable:
+            enforce_rate_limit(
+                db, action="db_failure", scope="account", identifier="user@example.com",
+                limit=1, window=timedelta(minutes=15),
+            )
+    assert unavailable.value.status_code == 503
+    assert "NeverEchoDatabaseCredentials" not in caplog.text
+    assert "Persistencia do limitador indisponivel" in caplog.text

@@ -21,10 +21,15 @@ class LoginResponse(BaseModel):
 
 class LoginTwoFactorRequired(BaseModel):
     requires_2fa: bool = True
+    challenge_id: str
+    challenge_secret: str = Field(repr=False)
+    expires_in: int = 300
 
 
 class TwoFactorVerifyRequest(BaseModel):
-    email: EmailStr
+    model_config = ConfigDict(extra="forbid")
+    challenge_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    challenge_secret: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$", repr=False)
     code: str = Field(pattern=r"^\d{6}$")
 
 

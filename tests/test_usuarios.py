@@ -257,7 +257,7 @@ def test_login_with_correct_password():
         )
 
     assert response.status_code == 200
-    assert response.json() == {"requires_2fa": True}
+    assert response.json()["requires_2fa"] is True
     assert created["id"] is not None
 
 

@@ -1,0 +1,28 @@
+{
+  "argon2": {
+    "hash_len": 32,
+    "memory_cost_kib": 65536,
+    "parallelism": 2,
+    "salt_len": 16,
+    "time_cost": 2,
+    "type": "argon2id"
+  },
+  "concurrency": {
+    "operations": 8,
+    "workers": 4
+  },
+  "cpu_seconds": 1.2188,
+  "latency_ms": {
+    "average": 129.02,
+    "maximum": 136.83,
+    "minimum": 123.7,
+    "p95": 132.31
+  },
+  "memory_bytes": {
+    "peak_after": 294789120,
+    "peak_increase": 201629696,
+    "working_after": 26116096,
+    "working_before": 26066944
+  },
+  "wall_seconds": 0.2673
+}

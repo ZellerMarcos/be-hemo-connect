@@ -6,8 +6,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import case, func, select, update
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.password_reset_token import PasswordResetToken
@@ -16,8 +16,17 @@ from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
 from app.security.audit import registrar_evento
 from app.security.password import hash_password, verify_password
-from app.security.two_factor import generate_code, hash_code, verify_code
-from app.security.session import revoke_user_authentication
+from app.security.two_factor import (
+    VERIFIER_FORMAT,
+    generate_challenge_nonce,
+    generate_challenge_secret,
+    generate_code,
+    hash_challenge_secret,
+    hash_code,
+    verify_code,
+)
+from app.security.session import issue_session, revoke_user_authentication
+from app.schemas.auth import LoginTwoFactorRequired
 from app.services.email import (
     send_email_change_confirmation,
     send_email_change_notice,
@@ -34,6 +43,7 @@ EMAIL_CHANGE_TOKEN_VALIDITY = timedelta(minutes=15)
 FAILED_LOGIN_ATTEMPTS_LIMIT = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
 LOCKOUT_DURATION = timedelta(hours=1)
+TWO_FACTOR_FAILED_ATTEMPTS_LIMIT = 5
 
 
 def get_login_error_detail(db: Session, email: str) -> str:
@@ -125,9 +135,14 @@ def logout_user(db: Session, email: str) -> None:
         registrar_evento(db, "logout", "sucesso", ator=email, user_id=usuario.id)
 
 
-def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
+def issue_two_factor_code(db: Session, usuario: Usuario) -> LoginTwoFactorRequired:
     # Gera um código de 2FA para confirmar que a pessoa é realmente o dono da conta.
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    usuario = db.scalars(select(Usuario).where(
+        Usuario.id == usuario.id,
+    ).with_for_update().execution_options(populate_existing=True)).one()
+    if usuario.status != "ATIVO" or usuario.aprovacao_pendente:
+        raise HTTPException(401, "Sessão inválida.")
     # Somente o código mais recente deve permanecer válido para este login.
     pending_codes = db.scalars(
         select(TwoFactorCode).where(
@@ -139,9 +154,21 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
         pending_code.used_at = now
 
     code = generate_code()
+    challenge_nonce = generate_challenge_nonce()
+    challenge_secret = generate_challenge_secret()
     two_factor_code = TwoFactorCode(
         usuario_id=usuario.id,
-        code_hash=hash_code(code),
+        code_hash=hash_code(
+            code,
+            usuario_id=usuario.id,
+            challenge_nonce=challenge_nonce,
+            challenge_secret=challenge_secret,
+        ),
+        challenge_nonce=challenge_nonce,
+        key_version=VERIFIER_FORMAT,
+        verifier_format=VERIFIER_FORMAT,
+        challenge_token_hash=hash_challenge_secret(challenge_secret),
+        failed_attempts=0,
         expires_at=now + CODE_VALIDITY,
         created_at=now,
     )
@@ -161,48 +188,84 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> None:
     # O log confirma a tentativa de entrega sem expor o valor do código.
     logger.info("Token 2FA enviado | status=sucesso | email=%s", usuario.email)
     registrar_evento(db, "2fa_envio", "sucesso", ator=str(usuario.email), user_id=usuario.id)
-
-
-def verify_two_factor_code(db: Session, email: str, code: str) -> bool:
-    # Confere se o código enviado pelo usuário é o código válido e ainda não expirou.
-    usuario = db.scalar(select(Usuario).where(Usuario.email == email))
-    if usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
-        registrar_evento(db, "2fa_validacao", "falha", ator=email, motivo="usuario_invalido")
-        return False
-
-    two_factor_code = db.scalar(
-        select(TwoFactorCode)
-        .where(
-            TwoFactorCode.usuario_id == usuario.id,
-            TwoFactorCode.used_at.is_(None),
-        )
-        .order_by(TwoFactorCode.created_at.desc())
+    return LoginTwoFactorRequired(
+        challenge_id=challenge_nonce, challenge_secret=challenge_secret,
     )
-    if two_factor_code is None:
-        registrar_evento(db, "2fa_validacao", "falha", ator=email, user_id=usuario.id, motivo="codigo_ausente")
-        return False
 
+
+def verify_two_factor_code(
+    db: Session, challenge_id: str, challenge_secret: str, code: str,
+) -> tuple[Usuario, str] | None:
+    challenge = db.scalar(select(TwoFactorCode).where(
+        TwoFactorCode.challenge_nonce == challenge_id,
+        TwoFactorCode.verifier_format == VERIFIER_FORMAT,
+    ))
+    if (
+        challenge is None or challenge.challenge_token_hash is None
+        or not hmac.compare_digest(
+            hash_challenge_secret(challenge_secret), challenge.challenge_token_hash,
+        )
+    ):
+        registrar_evento(db, "2fa_validacao", "falha", motivo="desafio_invalido")
+        return None
+
+    usuario = db.scalar(select(Usuario).where(
+        Usuario.id == challenge.usuario_id,
+    ).with_for_update().execution_options(populate_existing=True))
+    db.refresh(challenge)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    # A validade é conferida antes da comparação, e o código só é consumido após a confirmação.
-    if two_factor_code.expires_at <= now or not verify_code(code, two_factor_code.code_hash):
-        # Expiracao e codigo incorreto compartilham a mesma resposta para evitar enumeracao.
-        registrar_evento(db, "2fa_validacao", "falha", ator=email, user_id=usuario.id, motivo="codigo_invalido_ou_expirado")
-        return False
+    if (
+        usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente
+        or challenge.used_at is not None or challenge.expires_at <= now
+        or challenge.failed_attempts >= TWO_FACTOR_FAILED_ATTEMPTS_LIMIT
+    ):
+        registrar_evento(db, "2fa_validacao", "falha", motivo="desafio_indisponivel")
+        return None
 
-    # Marcar o registro como usado impede a reutilização do mesmo código.
-    consumed = db.execute(update(TwoFactorCode).where(
-        TwoFactorCode.id == two_factor_code.id,
-        TwoFactorCode.used_at.is_(None),
-        TwoFactorCode.expires_at > now,
-    ).values(used_at=now))
-    if consumed.rowcount != 1:
+    if not verify_code(
+        code, challenge.code_hash, usuario_id=usuario.id,
+        challenge_nonce=challenge.challenge_nonce, challenge_secret=challenge_secret,
+    ):
+        next_attempt = TwoFactorCode.failed_attempts + 1
+        db.execute(update(TwoFactorCode).where(
+            TwoFactorCode.id == challenge.id,
+            TwoFactorCode.used_at.is_(None),
+        ).values(
+            failed_attempts=next_attempt,
+            used_at=case(
+                (next_attempt >= TWO_FACTOR_FAILED_ATTEMPTS_LIMIT, now),
+                else_=TwoFactorCode.used_at,
+            ),
+        ))
+        registrar_evento(
+            db, "2fa_validacao", "falha", ator=usuario.email,
+            user_id=usuario.id, motivo="codigo_invalido_ou_expirado",
+        )
+        return None
+
+    try:
+        consumed = db.execute(update(TwoFactorCode).where(
+            TwoFactorCode.id == challenge.id,
+            TwoFactorCode.used_at.is_(None),
+            TwoFactorCode.expires_at > now,
+            TwoFactorCode.failed_attempts < TWO_FACTOR_FAILED_ATTEMPTS_LIMIT,
+        ).values(used_at=now).returning(TwoFactorCode.id)).scalar_one_or_none()
+        if consumed is None:
+            db.rollback()
+            registrar_evento(db, "2fa_validacao", "falha", motivo="codigo_consumido")
+            return None
+        registrar_evento(
+            db, "2fa_validacao", "sucesso", ator=usuario.email,
+            user_id=usuario.id, commit=False,
+        )
+        token = issue_session(db, usuario, commit=False)
+        db.commit()
+    except (SQLAlchemyError, HTTPException):
         db.rollback()
-        registrar_evento(db, "2fa_validacao", "falha", user_id=usuario.id, motivo="codigo_consumido")
-        return False
-    db.commit()
-    # O evento de sucesso so ocorre depois de consumir o desafio contra reutilizacao.
-    registrar_evento(db, "2fa_validacao", "sucesso", ator=email, user_id=usuario.id)
-    return True
+        logger.error("Falha na transacao de autenticacao 2FA; sessao nao confirmada.")
+        raise
+    logger.info("Autenticacao 2FA e sessao confirmadas | user_id=%s", usuario.id)
+    return usuario, token
 
 
 def generate_password_reset_token() -> str:

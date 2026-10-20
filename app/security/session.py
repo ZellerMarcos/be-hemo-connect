@@ -21,7 +21,7 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def issue_session(db: Session, usuario: Usuario) -> str:
+def issue_session(db: Session, usuario: Usuario, *, commit: bool = True) -> str:
     if usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         raise HTTPException(401, "Sessão inválida.")
     token = secrets.token_urlsafe(32)
@@ -33,7 +33,10 @@ def issue_session(db: Session, usuario: Usuario) -> str:
         last_activity_at=now,
     ))
     usuario.last_activity_at = now
-    registrar_evento(db, "sessao", "sucesso", ator=usuario.email, user_id=usuario.id, motivo="sessao_criada")
+    registrar_evento(
+        db, "sessao", "sucesso", ator=usuario.email, user_id=usuario.id,
+        motivo="sessao_criada", commit=commit,
+    )
     return token
 
 
