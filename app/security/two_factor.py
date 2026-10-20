@@ -17,6 +17,7 @@ def generate_challenge_nonce() -> str:
 
 
 def generate_challenge_secret() -> str:
+    # Os 256 bits aleatorios protegem o HMAC mesmo se o banco com codigos curtos vazar.
     return secrets.token_urlsafe(32)
 
 
@@ -31,6 +32,8 @@ def hash_code(
     challenge_nonce: str,
     challenge_secret: str,
 ) -> str:
+    # Dominio, formato e contexto impedem reutilizar o verificador em outro desafio.
+    # JSON canonico evita ambiguidades que uma concatenacao de campos permitiria.
     payload = json.dumps(
         ["hemo-connect:2fa", VERIFIER_FORMAT, usuario_id, challenge_nonce, code],
         separators=(",", ":"),

@@ -138,6 +138,8 @@ def logout_user(db: Session, email: str) -> None:
 def issue_two_factor_code(db: Session, usuario: Usuario) -> LoginTwoFactorRequired:
     # Gera um código de 2FA para confirmar que a pessoa é realmente o dono da conta.
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Em PostgreSQL, emissao e verificacao usam o mesmo lock por usuario.
+    # Isso serializa a troca do desafio atual com as confirmacoes em andamento.
     usuario = db.scalars(select(Usuario).where(
         Usuario.id == usuario.id,
     ).with_for_update().execution_options(populate_existing=True)).one()
@@ -156,6 +158,7 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> LoginTwoFactorRequir
     code = generate_code()
     challenge_nonce = generate_challenge_nonce()
     challenge_secret = generate_challenge_secret()
+    # key_version preserva o schema de 005; agora identifica o formato, nao uma chave global.
     two_factor_code = TwoFactorCode(
         usuario_id=usuario.id,
         code_hash=hash_code(
@@ -196,6 +199,8 @@ def issue_two_factor_code(db: Session, usuario: Usuario) -> LoginTwoFactorRequir
 def verify_two_factor_code(
     db: Session, challenge_id: str, challenge_secret: str, code: str,
 ) -> tuple[Usuario, str] | None:
+    # Confere a posse do segredo antes de contabilizar erros no desafio legitimo.
+    # Segredos errados seguem sujeitos ao limitador da rota, sem esgotar os cinco codigos.
     challenge = db.scalar(select(TwoFactorCode).where(
         TwoFactorCode.challenge_nonce == challenge_id,
         TwoFactorCode.verifier_format == VERIFIER_FORMAT,
@@ -212,6 +217,7 @@ def verify_two_factor_code(
     usuario = db.scalar(select(Usuario).where(
         Usuario.id == challenge.usuario_id,
     ).with_for_update().execution_options(populate_existing=True))
+    # Rele apos obter o lock: outra transacao pode ter consumido ou revogado o desafio.
     db.refresh(challenge)
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     if (
@@ -244,6 +250,7 @@ def verify_two_factor_code(
         return None
 
     try:
+        # O UPDATE condicional e a barreira de uso unico; so quem consumir pode criar sessao.
         consumed = db.execute(update(TwoFactorCode).where(
             TwoFactorCode.id == challenge.id,
             TwoFactorCode.used_at.is_(None),
@@ -254,6 +261,7 @@ def verify_two_factor_code(
             db.rollback()
             registrar_evento(db, "2fa_validacao", "falha", motivo="codigo_consumido")
             return None
+        # Os helpers nao podem confirmar separadamente: uma falha deve desfazer tudo.
         registrar_evento(
             db, "2fa_validacao", "sucesso", ator=usuario.email,
             user_id=usuario.id, commit=False,

@@ -48,6 +48,7 @@ def registrar_evento(
     if db.get_bind().dialect.name == "postgresql":
         # Serializa o encadeamento entre processos que escrevem no PostgreSQL.
         db.execute(text("SELECT pg_advisory_xact_lock(1847301)"))
+    # Inclui eventos ainda pendentes desta transacao no elo anterior, sem confirma-los.
     db.flush()
     previous = db.scalar(select(AuditLog).order_by(AuditLog.id.desc()))
     previous_hash = previous.current_hash if previous else None
@@ -77,6 +78,7 @@ def registrar_evento(
     # O commit torna a evidencia duravel; refresh recupera o ID e os valores gerados pelo banco.
     db.add(registro)
     if not commit:
+        # O chamador confirma ou reverte o evento junto com a operacao de negocio.
         db.flush()
         return registro
     db.commit()

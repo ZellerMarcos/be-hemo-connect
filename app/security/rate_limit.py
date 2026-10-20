@@ -30,6 +30,7 @@ def request_origin(request: Request) -> str | None:
     if os.getenv("APP_ENV", "development").lower() == "production" and (
         not verified_peer or direct_origin == verified_peer
     ):
+        # Nao agrupa usuarios pelo IP compartilhado do proxy; conta/global continuam ativos.
         return None
     try:
         if direct_origin is not None:
@@ -41,6 +42,8 @@ def request_origin(request: Request) -> str | None:
 
 
 def _scope_key(action: str, scope: str, identifier: str) -> str:
+    # Deterministico entre workers, mas nao anonimo: emails/IPs conhecidos podem ser testados.
+    # Alterar dominio/formato muda os contadores e exige planejar a transicao das janelas.
     normalized = json.dumps(
         ["hemo-connect:rate-limit:v2", action, scope, identifier.strip().lower()],
         ensure_ascii=True, separators=(",", ":"),
@@ -77,6 +80,7 @@ def enforce_rate_limit(
         attempts=1,
     )
     reset_window = RateLimitCounter.window_started_at <= cutoff
+    # Incremento e reinicio da janela ocorrem no banco, sem leitura/gravacao concorrentes.
     statement = statement.on_conflict_do_update(
         index_elements=[RateLimitCounter.action, RateLimitCounter.scope_key],
         set_={
@@ -99,6 +103,7 @@ def enforce_rate_limit(
                 RateLimitCounter.window_started_at < now - timedelta(hours=24),
             ))
         attempts, window_started_at = db.execute(statement).one()
+        # A tentativa deve persistir mesmo se o endpoint rejeitar credenciais ou responder 429.
         db.commit()
     except SQLAlchemyError as error:
         db.rollback()

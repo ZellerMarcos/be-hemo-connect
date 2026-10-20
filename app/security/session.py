@@ -22,10 +22,12 @@ def utcnow() -> datetime:
 
 
 def issue_session(db: Session, usuario: Usuario, *, commit: bool = True) -> str:
+    # commit=False deixa o chamador unir sessao, consumo do 2FA e auditoria na mesma transacao.
     if usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         raise HTTPException(401, "Sessão inválida.")
     token = secrets.token_urlsafe(32)
     now = utcnow()
+    # Token opaco: o cliente recebe o bruto, mas uma copia do banco contem somente seu hash.
     db.add(AuthSession(
         usuario_id=usuario.id,
         token_hash=hashlib.sha256(token.encode()).hexdigest(),
@@ -52,6 +54,8 @@ def authenticate_session(db: Session, authorization: str | None) -> Usuario:
     usuario = db.get(Usuario, session.usuario_id) if session else None
     if session is None or usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         raise HTTPException(401, "Sessão inválida.")
+    # Inatividade e medida por requisicoes autenticadas, nao por manter a guia aberta.
+    # Depois de expirar, uma nova requisicao nao recupera a sessao.
     if now - session.last_activity_at > INACTIVITY_TIMEOUT:
         session.revoked_at = now
         registrar_evento(db, "sessao", "falha", user_id=usuario.id, motivo="inatividade")
@@ -86,6 +90,8 @@ def revoke_user_sessions(db: Session, usuario_id: int) -> None:
 
 
 def revoke_user_authentication(db: Session, usuario_id: int) -> None:
+    # Mudancas sensiveis invalidam tambem meios pendentes de recuperar o acesso.
+    # Sem commit aqui: a revogacao acompanha a transacao que altera a conta.
     now = utcnow()
     revoke_user_sessions(db, usuario_id)
     for model in (TwoFactorCode, PasswordResetToken, EmailChangeToken):

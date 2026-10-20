@@ -8,11 +8,13 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 
 # Preencher somente apos comprovar os peers e a sanitizacao de headers no deploy.
+# Vazio deliberadamente: sem prova da topologia, nao habilitar controle por IP em producao.
 TRUSTED_PROXY_PEERS: tuple[str, ...] = ()
 
 
 class DeploymentProxyHeaders(ProxyHeadersMiddleware):
     def __init__(self, app: ASGIApp, trusted_hosts: tuple[str, ...]):
+        # Aceita so IPs individuais; wildcard/CIDR ampliariam a fronteira de confianca.
         peers = [str(ipaddress.ip_address(host)) for host in trusted_hosts]
         super().__init__(app, trusted_hosts=peers)
 
@@ -21,6 +23,8 @@ class DeploymentProxyHeaders(ProxyHeadersMiddleware):
             scope = dict(scope)
             peer = scope.get("client")
             host = peer[0] if peer else None
+            # Guarda a origem da conexao antes de o Uvicorn normalizar scope["client"].
+            # A aplicacao usa esta marca, nunca um header externo, para comprovar o proxy.
             scope["state"] = {
                 **scope.get("state", {}),
                 "verified_proxy_peer": host if host in self.trusted_hosts else None,
@@ -46,6 +50,7 @@ def main() -> None:
         host="0.0.0.0",
         port=args.port,
         workers=args.workers,
+        # O wrapper da factory ja normaliza headers; nao aplicar a regra duas vezes.
         proxy_headers=False,
     )
 
