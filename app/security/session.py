@@ -7,6 +7,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models.auth_session import AuthSession
+from app.models.email_change_token import EmailChangeToken
+from app.models.password_reset_token import PasswordResetToken
+from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
 from app.security.audit import registrar_evento
 
@@ -77,3 +80,13 @@ def revoke_user_sessions(db: Session, usuario_id: int) -> None:
         AuthSession.usuario_id == usuario_id,
         AuthSession.revoked_at.is_(None),
     ).values(revoked_at=utcnow()))
+
+
+def revoke_user_authentication(db: Session, usuario_id: int) -> None:
+    now = utcnow()
+    revoke_user_sessions(db, usuario_id)
+    for model in (TwoFactorCode, PasswordResetToken, EmailChangeToken):
+        db.execute(update(model).where(
+            model.usuario_id == usuario_id,
+            model.used_at.is_(None),
+        ).values(used_at=now))

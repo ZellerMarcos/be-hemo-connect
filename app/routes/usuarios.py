@@ -119,6 +119,8 @@ def update_usuario_route(
         or data.hemocentro_id != usuario.hemocentro_id
     ):
         raise HTTPException(403, "Não é permitido alterar perfil, status ou vínculo institucional.")
+    if str(data.email).lower() != str(usuario.email).lower():
+        raise HTTPException(409, "Use o fluxo seguro de troca de e-mail.")
     if data.perfil not in ("DOADOR", "ADMINISTRADOR") and data.hemocentro_id is None:
         raise HTTPException(422, "Profissionais precisam de vínculo com um hemocentro.")
     if data.hemocentro_id is not None and db.get(Hemocentro, data.hemocentro_id) is None:

@@ -20,6 +20,8 @@ from app.models.audit_log import AuditLog
 from app.security.two_factor import hash_code
 from app.services.auth import CODE_VALIDITY
 from app.models.auth_session import AuthSession
+from app.models.email_change_token import EmailChangeToken
+from tests.session_helpers import auth_headers
 
 
 engine = create_engine(
@@ -38,6 +40,7 @@ def clean_database():
         session.execute(Base.metadata.tables["consentimentos"].delete())
         session.execute(Base.metadata.tables["two_factor_codes"].delete())
         session.execute(Base.metadata.tables["password_reset_tokens"].delete())
+        session.execute(Base.metadata.tables["email_change_tokens"].delete())
         session.execute(Base.metadata.tables["usuarios"].delete())
         session.commit()
 
@@ -462,6 +465,103 @@ def test_password_reset_failure_is_registered_in_log(caplog):
     assert "status=falha" in caplog.text
     assert "token inválido ou expirado" in caplog.text
     assert "NovaSenha123!" not in caplog.text
+
+
+def test_email_change_requires_current_password_and_preserves_session():
+    create_user()
+    headers = auth_headers(engine)
+
+    response = client.post(
+        "/auth/email-change/request",
+        json={"new_email": "novo@example.com", "current_password": "SenhaErrada!"},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert client.get("/auth/me", headers=headers).status_code == 200
+
+
+def test_email_change_keeps_old_email_until_single_use_confirmation(monkeypatch):
+    create_user()
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:5173")
+    confirmations: list[tuple[str, str]] = []
+    notices: list[tuple[str, str]] = []
+    headers = auth_headers(engine)
+
+    with patch(
+        "app.services.auth.send_email_change_confirmation",
+        side_effect=lambda recipient, url: confirmations.append((recipient, url)),
+    ), patch(
+        "app.services.auth.send_email_change_notice",
+        side_effect=lambda recipient, requested: notices.append((recipient, requested)),
+    ):
+        requested = client.post(
+            "/auth/email-change/request",
+            json={"new_email": "Novo@Example.com", "current_password": "SenhaSegura123!"},
+            headers=headers,
+        )
+
+    assert requested.status_code == 200
+    assert requested.json() == {"pending_email": "novo@example.com"}
+    assert confirmations[0][0] == "novo@example.com"
+    assert notices == [("joao@example.com", "novo@example.com")]
+    with Session(engine) as session:
+        usuario = session.scalar(select(Usuario))
+        assert usuario.email == "joao@example.com"
+
+    token = confirmations[0][1].split("token=")[-1]
+    confirmed = client.post("/auth/email-change/confirm", json={"token": token})
+    repeated = client.post("/auth/email-change/confirm", json={"token": token})
+
+    assert confirmed.status_code == 200
+    assert confirmed.json() == {"changed": True, "email": "novo@example.com"}
+    assert repeated.status_code == 400
+    assert client.get("/auth/me", headers=headers).status_code == 401
+
+
+def test_email_change_rejects_email_already_in_use():
+    create_user()
+    assert client.post(
+        "/usuarios",
+        json=user_payload(email="maria@example.com", cpf="98765432109"),
+    ).status_code == 201
+
+    response = client.post(
+        "/auth/email-change/request",
+        json={"new_email": "MARIA@example.com", "current_password": "SenhaSegura123!"},
+        headers=auth_headers(engine),
+    )
+
+    assert response.status_code == 409
+
+
+def test_email_change_invalidates_pending_password_reset():
+    create_user()
+    reset_links: list[str] = []
+    confirmation_links: list[str] = []
+    with patch(
+        "app.services.auth.send_password_reset_email",
+        side_effect=lambda recipient, url: reset_links.append(url),
+    ):
+        client.post("/auth/forgot-password", json={"email": "joao@example.com"})
+    with patch(
+        "app.services.auth.send_email_change_confirmation",
+        side_effect=lambda recipient, url: confirmation_links.append(url),
+    ), patch("app.services.auth.send_email_change_notice"):
+        client.post(
+            "/auth/email-change/request",
+            json={"new_email": "novo@example.com", "current_password": "SenhaSegura123!"},
+            headers=auth_headers(engine),
+        )
+
+    assert client.post(
+        "/auth/email-change/confirm",
+        json={"token": confirmation_links[0].split("token=")[-1]},
+    ).status_code == 200
+    assert client.post(
+        "/auth/reset-password",
+        json={"token": reset_links[0].split("token=")[-1], "senha": "NovaSenha123!"},
+    ).status_code == 400
 
 
 def test_user_session_expires_after_45_minutes_of_inactivity():

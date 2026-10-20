@@ -10,6 +10,10 @@ from app.schemas.auth import (
     LoginRequest,
     LoginResponse,
     LoginTwoFactorRequired,
+    EmailChangeConfirmRequest,
+    EmailChangeConfirmResponse,
+    EmailChangeRequest,
+    EmailChangeRequestResponse,
     PasswordResetRequest,
     PasswordResetResponse,
     PasswordResetTokenRequest,
@@ -20,10 +24,12 @@ from app.schemas.auth import (
 from app.security.session import authenticate_session, issue_session, revoke_session
 from app.services.auth import (
     authenticate_user,
+    confirm_email_change,
     get_login_error_detail,
     issue_two_factor_code,
     logout_user,
     request_password_reset,
+    request_email_change,
     reset_password,
     verify_two_factor_code,
 )
@@ -111,3 +117,23 @@ def require_active_session(
 @router.get("/me", response_model=LoginResponse)
 def current_user(usuario: Usuario = Depends(require_active_session)):
     return usuario
+
+
+@router.post("/email-change/request", response_model=EmailChangeRequestResponse)
+def request_email_change_route(
+    data: EmailChangeRequest,
+    db: Session = Depends(get_db),
+    usuario: Usuario = Depends(require_active_session),
+):
+    pending_email = request_email_change(
+        db, usuario, str(data.new_email), data.current_password,
+    )
+    return EmailChangeRequestResponse(pending_email=pending_email)
+
+
+@router.post("/email-change/confirm", response_model=EmailChangeConfirmResponse)
+def confirm_email_change_route(
+    data: EmailChangeConfirmRequest,
+    db: Session = Depends(get_db),
+):
+    return EmailChangeConfirmResponse(email=confirm_email_change(db, data.token))

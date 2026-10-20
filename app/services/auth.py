@@ -6,22 +6,30 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.password_reset_token import PasswordResetToken
+from app.models.email_change_token import EmailChangeToken
 from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
 from app.security.audit import registrar_evento
 from app.security.password import hash_password, verify_password
 from app.security.two_factor import generate_code, hash_code, verify_code
-from app.security.session import revoke_user_sessions
-from app.services.email import send_password_reset_email, send_two_factor_code
+from app.security.session import revoke_user_authentication
+from app.services.email import (
+    send_email_change_confirmation,
+    send_email_change_notice,
+    send_password_reset_email,
+    send_two_factor_code,
+)
 
 
 logger = logging.getLogger(__name__)
 CODE_VALIDITY = timedelta(minutes=5)
 RESET_TOKEN_VALIDITY = timedelta(minutes=15)
+EMAIL_CHANGE_TOKEN_VALIDITY = timedelta(minutes=15)
 # A proteção contra brute force considera até 5 erros em 15 minutos antes de bloquear a conta por 1 hora.
 FAILED_LOGIN_ATTEMPTS_LIMIT = 5
 FAILED_LOGIN_WINDOW = timedelta(minutes=15)
@@ -338,10 +346,119 @@ def reset_password(db: Session, token: str, new_password: str) -> bool:
 
     # A senha só é alterada depois que esta requisição assume o uso exclusivo do token.
     usuario.senha_hash = hash_password(new_password)
-    revoke_user_sessions(db, usuario.id)
+    revoke_user_authentication(db, usuario.id)
     usuario.last_activity_at = None
     db.commit()
     # O evento de sucesso permite auditar a operação sem registrar a nova senha ou o token.
     logger.info("Reset bem sucedido | status=sucesso | email=%s", usuario.email)
     registrar_evento(db, "reset_senha", "sucesso", ator=str(usuario.email), user_id=usuario.id)
     return True
+
+
+def request_email_change(
+    db: Session,
+    usuario: Usuario,
+    new_email: str,
+    current_password: str,
+) -> str:
+    normalized_email = new_email.strip().lower()
+    if not verify_password(current_password, usuario.senha_hash):
+        registrar_evento(
+            db, "troca_email_solicitacao", "falha",
+            ator=str(usuario.email), user_id=usuario.id, motivo="reautenticacao_invalida",
+        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Senha atual inválida.")
+    if normalized_email == str(usuario.email).lower():
+        raise HTTPException(status.HTTP_409_CONFLICT, "O novo e-mail deve ser diferente do atual.")
+    existing_user = db.scalar(
+        select(Usuario.id).where(func.lower(Usuario.email) == normalized_email)
+    )
+    if existing_user is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este e-mail já está em uso.")
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.execute(update(EmailChangeToken).where(
+        EmailChangeToken.usuario_id == usuario.id,
+        EmailChangeToken.used_at.is_(None),
+    ).values(used_at=now))
+    raw_token = generate_password_reset_token()
+    change_token = EmailChangeToken(
+        usuario_id=usuario.id,
+        new_email=normalized_email,
+        token_hash=hash_reset_token(raw_token),
+        expires_at=now + EMAIL_CHANGE_TOKEN_VALIDITY,
+        created_at=now,
+    )
+    db.add(change_token)
+    db.commit()
+
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    confirmation_url = f"{frontend_url}/confirm-email?token={raw_token}"
+    try:
+        send_email_change_confirmation(normalized_email, confirmation_url)
+        send_email_change_notice(str(usuario.email), normalized_email)
+    except Exception:
+        change_token.used_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+        registrar_evento(
+            db, "troca_email_solicitacao", "falha",
+            ator=str(usuario.email), user_id=usuario.id, motivo="falha_notificacao",
+        )
+        raise
+
+    registrar_evento(
+        db, "troca_email_solicitacao", "sucesso",
+        ator=str(usuario.email), user_id=usuario.id,
+    )
+    return normalized_email
+
+
+def confirm_email_change(db: Session, raw_token: str) -> str:
+    token_hash = hash_reset_token(raw_token)
+    change_token = db.scalar(select(EmailChangeToken).where(
+        EmailChangeToken.token_hash == token_hash,
+        EmailChangeToken.used_at.is_(None),
+    ))
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if change_token is None or change_token.expires_at <= now:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Token de troca de e-mail inválido ou expirado.",
+        )
+    usuario = db.get(Usuario, change_token.usuario_id)
+    if usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Token de troca de e-mail inválido ou expirado.",
+        )
+    if db.scalar(select(Usuario.id).where(
+        func.lower(Usuario.email) == change_token.new_email.lower(),
+        Usuario.id != usuario.id,
+    )) is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este e-mail já está em uso.")
+
+    consumed = db.execute(update(EmailChangeToken).where(
+        EmailChangeToken.id == change_token.id,
+        EmailChangeToken.used_at.is_(None),
+        EmailChangeToken.expires_at > now,
+    ).values(used_at=now))
+    if consumed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Token de troca de e-mail inválido ou expirado.",
+        )
+
+    old_email = str(usuario.email)
+    usuario.email = change_token.new_email
+    revoke_user_authentication(db, usuario.id)
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este e-mail já está em uso.") from error
+    registrar_evento(
+        db, "troca_email_confirmacao", "sucesso",
+        ator=old_email, user_id=usuario.id,
+    )
+    return str(usuario.email)

@@ -138,7 +138,7 @@ def test_update_user():
     update = payload(
         nome="Maria Silva",
         cpf="10987654321",
-        email="maria@example.com",
+        email="joao@example.com",
         perfil="DOADOR",
         status="ATIVO",
     )
@@ -154,6 +154,26 @@ def test_update_user():
     assert response.json()["nome"] == "Maria Silva"
     assert response.json()["perfil"] == "DOADOR"
     assert "senha_hash" not in response.json()
+
+
+def test_update_user_rejects_direct_email_change():
+    created = create_user()
+    update = payload(
+        cpf="10987654321",
+        email="maria@example.com",
+        perfil="DOADOR",
+        status="ATIVO",
+    )
+    update.pop("senha")
+
+    response = client.put(
+        f"/usuarios/{created['id']}",
+        json=update,
+        headers=auth_headers(engine),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Use o fluxo seguro de troca de e-mail."
 
 
 def test_delete_user():

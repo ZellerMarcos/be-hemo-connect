@@ -51,3 +51,21 @@ class PasswordResetTokenRequest(BaseModel):
 
 class PasswordResetTokenResponse(BaseModel):
     reset: bool = True
+
+
+class EmailChangeRequest(BaseModel):
+    new_email: EmailStr
+    current_password: str = Field(min_length=1)
+
+
+class EmailChangeRequestResponse(BaseModel):
+    pending_email: EmailStr
+
+
+class EmailChangeConfirmRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
+class EmailChangeConfirmResponse(BaseModel):
+    changed: bool = True
+    email: EmailStr

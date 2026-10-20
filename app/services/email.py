@@ -74,3 +74,25 @@ def send_password_reset_email(recipient: str, reset_url: str) -> None:
         "Este link é válido por 15 minutos e pode ser utilizado uma única vez.\n"
         "Se você não solicitou a redefinição, ignore esta mensagem."
     )
+
+
+def send_email_change_confirmation(recipient: str, confirmation_url: str) -> None:
+    _send_email(
+        recipient,
+        "Confirme seu novo e-mail - Hemo Connect",
+        "Foi solicitada a troca do e-mail da sua conta Hemo Connect.\n\n"
+        f"Confirme o novo endereço neste link:\n{confirmation_url}\n\n"
+        "Este link é válido por 15 minutos e pode ser utilizado uma única vez.\n"
+        "Se você não reconhece a solicitação, não confirme e entre em contato com o suporte."
+    )
+
+
+def send_email_change_notice(recipient: str, requested_email: str) -> None:
+    _send_email(
+        recipient,
+        "Troca de e-mail solicitada - Hemo Connect",
+        "Uma troca de e-mail foi solicitada para sua conta Hemo Connect.\n\n"
+        f"Novo endereço solicitado: {requested_email}\n\n"
+        "Seu e-mail atual continuará válido até a confirmação do novo endereço.\n"
+        "Se você não fez esta solicitação, altere sua senha e entre em contato com o suporte."
+    )
