@@ -44,6 +44,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
+    expose_headers=["Retry-After"],
 )
 
 is_production = os.getenv("APP_ENV", "development").lower() == "production"
@@ -51,6 +52,10 @@ is_production = os.getenv("APP_ENV", "development").lower() == "production"
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, error: RequestValidationError):
+    if request.url.path.startswith(("/auth", "/usuarios")):
+        return JSONResponse(status_code=422, content={
+            "detail": "Confira os campos informados para esta operação.",
+        }, headers={"Cache-Control": "no-store"})
     if request.url.path == "/agendamentos":
         # O erro padrão do Pydantic inclui a entrada, que pode conter dados íntimos.
         return JSONResponse(status_code=422, content={
@@ -61,6 +66,11 @@ async def validation_error(request: Request, error: RequestValidationError):
 
 @app.on_event("startup")
 def ensure_lgpd_tables() -> None:
+    if is_production:
+        logging.getLogger("app").warning(
+            "Controle por origem exige proxy comprovado na configuracao de implantacao; "
+            "sem origem verificada permanecem os limites globais e por conta."
+        )
     # Tenta criar a tabela de consentimentos quando ainda nao existe no ambiente.
     try:
         # A criação é idempotente; em produção o SQL versionado continua sendo a fonte de verdade.
@@ -76,10 +86,8 @@ def ensure_lgpd_tables() -> None:
 async def enforce_transport_security(request: Request, call_next):
     """Enforce HTTPS in production and attach baseline security headers."""
     if is_production:
-    # Render informa o protocolo original por X-Forwarded-Proto; o redirect ocorre antes da rota.
-        forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-        host = request.headers.get("host", "")
-        is_local_host = host.startswith("localhost") or host.startswith("127.0.0.1")
+        forwarded_proto = request.url.scheme
+        is_local_host = request.url.hostname in {"localhost", "127.0.0.1", "::1"}
         if forwarded_proto != "https" and not is_local_host:
             secure_url = request.url.replace(scheme="https")
             return RedirectResponse(url=str(secure_url), status_code=307)
@@ -89,7 +97,10 @@ async def enforce_transport_security(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    if request.url.path.startswith(("/privacy", "/triagens", "/agendamentos", "/questionario-pre-triagem")):
+    if request.url.path.startswith((
+        "/auth", "/usuarios", "/privacy", "/triagens", "/agendamentos",
+        "/questionario-pre-triagem",
+    )):
         response.headers["Cache-Control"] = "no-store"
     if is_production:
         # HSTS instrui o navegador a continuar usando HTTPS em chamadas futuras.

@@ -1,6 +1,7 @@
 from typing import Annotated
+from datetime import timedelta
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,6 +9,7 @@ from app.routes.auth import require_active_session
 from app.models.usuario import Usuario
 from app.models.hemocentro import Hemocentro
 from app.security.session import authenticate_session
+from app.security.rate_limit import enforce_public_endpoint_limits
 from app.services.privacidade import excluir_dados_titular
 from app.schemas.usuario import EnfermeiroSolicitacao, UsuarioCreate, UsuarioResponse, UsuarioUpdate
 from app.services.usuario import (
@@ -64,7 +66,17 @@ def read_usuario(
 
 
 @router.post("/solicitar-enfermagem", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
-def solicitar_enfermagem(data: EnfermeiroSolicitacao, db: Session = Depends(get_db)):
+def solicitar_enfermagem(
+    data: EnfermeiroSolicitacao,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce_public_endpoint_limits(
+        db, request, action="public_registration",
+        account_identifier=str(data.email),
+        account_limit=3, origin_limit=10, global_limit=1000,
+        window=timedelta(hours=1),
+    )
     if not data.consentimento_aceito:
         raise HTTPException(422, "O consentimento explicito e obrigatorio para concluir o cadastro.")
     try:
@@ -75,7 +87,7 @@ def solicitar_enfermagem(data: EnfermeiroSolicitacao, db: Session = Depends(get_
 
 @router.post("", response_model=UsuarioResponse, status_code=status.HTTP_201_CREATED)
 def create_usuario_route(
-    data: UsuarioCreate, db: Session = Depends(get_db),
+    data: UsuarioCreate, request: Request, db: Session = Depends(get_db),
     authorization: Annotated[str | None, Header()] = None,
 ):
     # Criação de usuário continua sem exigir sessão porque é o ponto de entrada do cadastro.
@@ -85,6 +97,12 @@ def create_usuario_route(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="O consentimento explicito e obrigatorio para concluir o cadastro.",
         )
+    enforce_public_endpoint_limits(
+        db, request, action="public_registration",
+        account_identifier=str(data.email),
+        account_limit=3, origin_limit=10, global_limit=1000,
+        window=timedelta(hours=1),
+    )
     if data.perfil != "DOADOR" or data.status != "ATIVO" or data.hemocentro_id is not None:
         actor = authenticate_session(db, authorization)
         if actor.perfil != "ADMINISTRADOR":
@@ -119,6 +137,8 @@ def update_usuario_route(
         or data.hemocentro_id != usuario.hemocentro_id
     ):
         raise HTTPException(403, "Não é permitido alterar perfil, status ou vínculo institucional.")
+    if str(data.email).lower() != str(usuario.email).lower():
+        raise HTTPException(409, "Use o fluxo seguro de troca de e-mail.")
     if data.perfil not in ("DOADOR", "ADMINISTRADOR") and data.hemocentro_id is None:
         raise HTTPException(422, "Profissionais precisam de vínculo com um hemocentro.")
     if data.hemocentro_id is not None and db.get(Hemocentro, data.hemocentro_id) is None:

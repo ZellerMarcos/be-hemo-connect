@@ -15,7 +15,7 @@ from app.models.triagem import Agendamento, Triagem
 from app.models.agenda import AlteracaoAgendamento
 from app.models.hemocentro import Hemocentro
 from app.security.password import hash_password
-from app.security.session import revoke_user_sessions
+from app.security.session import revoke_user_authentication
 
 
 BASE_LEGAL_PADRAO = "Execucao de contrato e seguranca da informacao"
@@ -188,7 +188,7 @@ def excluir_dados_titular(db: Session, usuario: Usuario) -> None:
     usuario.failed_login_attempts = 0
     usuario.failed_login_window_started_at = None
     usuario.locked_until = None
-    revoke_user_sessions(db, usuario.id)
+    revoke_user_authentication(db, usuario.id)
     for agenda in db.scalars(select(Agendamento).where(Agendamento.doador_id == usuario.id)
                              .with_for_update().execution_options(populate_existing=True)).all():
         agenda.respostas_pre_triagem = []

@@ -7,6 +7,9 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models.auth_session import AuthSession
+from app.models.email_change_token import EmailChangeToken
+from app.models.password_reset_token import PasswordResetToken
+from app.models.two_factor_code import TwoFactorCode
 from app.models.usuario import Usuario
 from app.security.audit import registrar_evento
 
@@ -18,11 +21,13 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def issue_session(db: Session, usuario: Usuario) -> str:
+def issue_session(db: Session, usuario: Usuario, *, commit: bool = True) -> str:
+    # commit=False deixa o chamador unir sessao, consumo do 2FA e auditoria na mesma transacao.
     if usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         raise HTTPException(401, "Sessão inválida.")
     token = secrets.token_urlsafe(32)
     now = utcnow()
+    # Token opaco: o cliente recebe o bruto, mas uma copia do banco contem somente seu hash.
     db.add(AuthSession(
         usuario_id=usuario.id,
         token_hash=hashlib.sha256(token.encode()).hexdigest(),
@@ -30,7 +35,10 @@ def issue_session(db: Session, usuario: Usuario) -> str:
         last_activity_at=now,
     ))
     usuario.last_activity_at = now
-    registrar_evento(db, "sessao", "sucesso", ator=usuario.email, user_id=usuario.id, motivo="sessao_criada")
+    registrar_evento(
+        db, "sessao", "sucesso", ator=usuario.email, user_id=usuario.id,
+        motivo="sessao_criada", commit=commit,
+    )
     return token
 
 
@@ -46,6 +54,8 @@ def authenticate_session(db: Session, authorization: str | None) -> Usuario:
     usuario = db.get(Usuario, session.usuario_id) if session else None
     if session is None or usuario is None or usuario.status != "ATIVO" or usuario.aprovacao_pendente:
         raise HTTPException(401, "Sessão inválida.")
+    # Inatividade e medida por requisicoes autenticadas, nao por manter a guia aberta.
+    # Depois de expirar, uma nova requisicao nao recupera a sessao.
     if now - session.last_activity_at > INACTIVITY_TIMEOUT:
         session.revoked_at = now
         registrar_evento(db, "sessao", "falha", user_id=usuario.id, motivo="inatividade")
@@ -77,3 +87,15 @@ def revoke_user_sessions(db: Session, usuario_id: int) -> None:
         AuthSession.usuario_id == usuario_id,
         AuthSession.revoked_at.is_(None),
     ).values(revoked_at=utcnow()))
+
+
+def revoke_user_authentication(db: Session, usuario_id: int) -> None:
+    # Mudancas sensiveis invalidam tambem meios pendentes de recuperar o acesso.
+    # Sem commit aqui: a revogacao acompanha a transacao que altera a conta.
+    now = utcnow()
+    revoke_user_sessions(db, usuario_id)
+    for model in (TwoFactorCode, PasswordResetToken, EmailChangeToken):
+        db.execute(update(model).where(
+            model.usuario_id == usuario_id,
+            model.used_at.is_(None),
+        ).values(used_at=now))

@@ -16,7 +16,11 @@ from app.schemas.usuario import AprovarEnfermeiroRequest
 from app.security.audit import verificar_integridade
 from app.security.password import hash_password
 from app.security.session import issue_session, utcnow
-from app.security.two_factor import hash_code
+from app.security.two_factor import (
+    VERIFIER_FORMAT, generate_challenge_nonce, generate_challenge_secret,
+    hash_challenge_secret, hash_code,
+)
+from tests.session_helpers import two_factor_payload
 from app.services.aprovacoes import aprovar_enfermeiro
 from tests.test_triagens import context  # noqa: F401
 
@@ -112,13 +116,27 @@ def test_pendente_sem_login_2fa_sessao_ou_reset(context, status):
     now = utcnow()
     token = "synthetic-pending-session"
     reset = "synthetic-pending-reset"
+    challenge_nonce = generate_challenge_nonce()
+    challenge_secret = generate_challenge_secret()
     with Session(engine) as db:
         nurse = db.get(Usuario, created["id"])
         nurse.status = status
         db.add_all([
             AuthSession(usuario_id=nurse.id, token_hash=hashlib.sha256(token.encode()).hexdigest(),
                         created_at=now, last_activity_at=now),
-            TwoFactorCode(usuario_id=nurse.id, code_hash=hash_code("123456"),
+            TwoFactorCode(
+                usuario_id=nurse.id,
+                code_hash=hash_code(
+                    "123456",
+                    usuario_id=nurse.id,
+                    challenge_nonce=challenge_nonce,
+                    challenge_secret=challenge_secret,
+                ),
+                challenge_nonce=challenge_nonce,
+                key_version=VERIFIER_FORMAT,
+                verifier_format=VERIFIER_FORMAT,
+                challenge_token_hash=hash_challenge_secret(challenge_secret),
+                failed_attempts=0,
                           created_at=now, expires_at=now + timedelta(minutes=5)),
             PasswordResetToken(usuario_id=nurse.id, token_hash=hashlib.sha256(reset.encode()).hexdigest(),
                                created_at=now, expires_at=now + timedelta(minutes=15)),
@@ -132,7 +150,10 @@ def test_pendente_sem_login_2fa_sessao_ou_reset(context, status):
         login = client.post("/auth/login", json={"email": created["email"], "senha": "SenhaSegura123!"})
         assert login.status_code == 401
         assert login.json()["detail"] == "E-mail ou senha inválidos."
-        assert client.post("/auth/2fa/verify", json={"email": created["email"], "code": "123456"}).status_code == 401
+        assert client.post("/auth/2fa/verify", json={
+            "challenge_id": challenge_nonce, "challenge_secret": challenge_secret,
+            "code": "123456",
+        }).status_code == 401
         assert client.post("/auth/forgot-password", json={"email": created["email"]}).status_code == 200
         assert client.post("/auth/reset-password", json={"token": reset, "senha": "NovaSenhaSegura123!"}).status_code == 400
         send_2fa.assert_not_called(); send_reset.assert_not_called()
@@ -216,7 +237,7 @@ def test_aprovar_audita_libera_login_e_preserva_legados(context):
         login = client.post("/auth/login", json={"email": nurse["email"], "senha": "SenhaSegura123!"})
         assert login.status_code == 200 and login.json()["requires_2fa"]
         code = mail.call_args.args[1]
-    verified = client.post("/auth/2fa/verify", json={"email": nurse["email"], "code": code})
+    verified = client.post("/auth/2fa/verify", json=two_factor_payload(login, code))
     assert verified.status_code == 200, verified.text
     assert verified.json()["usuario"]["perfil"] == "ENFERMEIRO"
     assert verified.json()["usuario"]["hemocentro_id"] == 2

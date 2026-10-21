@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.models.usuario import Usuario
 from app.security.password import hash_password
+from app.security.session import revoke_user_authentication
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 from app.services.privacidade import registrar_consentimentos_iniciais
 from app.security.audit import registrar_evento
@@ -91,9 +92,18 @@ def create_usuario(db: Session, data: UsuarioCreate, *, aprovacao_pendente: bool
 
 def update_usuario(db: Session, usuario: Usuario, data: UsuarioUpdate) -> Usuario:
     # Atualiza os campos do usuário respeitando regras de unicidade e preservando as demais informações.
-    _check_duplicates(db, data.cpf, str(data.email), usuario.id)
+    if str(data.email).lower() != str(usuario.email).lower():
+        raise ValueError("Use o fluxo seguro de troca de e-mail.")
+    sensitive_fields = {"perfil", "status", "hemocentro_id"}
+    authentication_must_be_revoked = any(
+        field in data.model_fields_set and getattr(usuario, field) != getattr(data, field)
+        for field in sensitive_fields
+    )
     for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(usuario, field, str(value) if field == "email" else value)
+        if field != "email":
+            setattr(usuario, field, value)
+    if authentication_must_be_revoked:
+        revoke_user_authentication(db, usuario.id)
     try:
         db.commit()
     except IntegrityError as error:

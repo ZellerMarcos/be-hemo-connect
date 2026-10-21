@@ -17,7 +17,7 @@ class Usuario(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     nome: Mapped[str] = mapped_column(String(255), nullable=False)
     cpf: Mapped[str] = mapped_column(String(11), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     perfil: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(10), nullable=False)
