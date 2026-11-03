@@ -1,0 +1,52 @@
+[
+  {
+    "role": "doador",
+    "path": "/auth/me",
+    "status": 200
+  },
+  {
+    "role": "doador",
+    "path": "/usuarios",
+    "status": 200
+  },
+  {
+    "role": "doador",
+    "path": "/hemocentros",
+    "status": 200
+  },
+  {
+    "role": "doador",
+    "path": "/hemocentros/1",
+    "status": 200
+  },
+  {
+    "role": "doador",
+    "path": "/agendamentos/me",
+    "status": 200
+  },
+  {
+    "role": "doador",
+    "path": "/historico/me",
+    "status": 200
+  },
+  {
+    "role": "administrador",
+    "path": "/auth/me",
+    "status": 200
+  },
+  {
+    "role": "administrador",
+    "path": "/usuarios",
+    "status": 200
+  },
+  {
+    "role": "administrador",
+    "path": "/hemocentros",
+    "status": 200
+  },
+  {
+    "role": "administrador",
+    "path": "/hemocentros/1",
+    "status": 200
+  }
+]
