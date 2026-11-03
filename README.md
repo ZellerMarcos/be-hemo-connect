@@ -24,6 +24,29 @@ Inclui autenticacao, agendas por unidade, reservas de vagas e atendimento.
 - [Estrutura](#estrutura)
 - [Escopo atual](#escopo-atual)
 
+## DevSecOps avancado
+
+O workflow [`devsecops-avancado.yml`](.github/workflows/devsecops-avancado.yml)
+adiciona ZAP DAST isolado, Bearer Privacy (Critical bloqueia) e Trivy SBOM
+CycloneDX. Ele preserva a esteira existente e publica relatorios e `sbom.json`.
+ZAP High, erros/warnings do Automation Framework e falhas de execucao/relatorio
+bloqueiam o check. Insights internos e respostas 5xx precisam de triagem.
+
+Consulte o [relatorio e procedimento de conclusao](docs/RELATORIO_DEVSECOPS_AVANCADO.md)
+e o [PDF com evidencias locais](docs/Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf).
+ZAP e Bearer foram executados localmente; resultados, limitacoes e achados
+estao no relatorio. As evidencias de execucao no GitHub continuam pendentes.
+O mantenedor deve publicar os arquivos, executar o workflow e exigir seus checks
+na protecao de branch; o YAML sozinho nao impede merge.
+
+Validacao dos helpers e geracao do PDF:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-devsecops.txt
+.\.venv\Scripts\python.exe -m unittest discover -s scripts\security_tests -v
+.\.venv\Scripts\python.exe scripts\render_security_report.py docs\RELATORIO_DEVSECOPS_AVANCADO.md docs\Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf
+```
+
 ## Tecnologias
 
 - Python 3.12 ou superior
