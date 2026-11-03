@@ -1,0 +1,6 @@
+Real local ASGI log excerpt; synthetic disposable database. No credentials or session headers included.
+
+INFO:     127.0.0.1:51038 - "GET /hemocentros/949092201149764599 HTTP/1.1" 500 Internal Server Error
+sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) integer out of range
+INFO:     127.0.0.1:63046 - "GET /hemocentros/556834777078170542 HTTP/1.1" 500 Internal Server Error
+sqlalchemy.exc.DataError: (psycopg.errors.NumericValueOutOfRange) integer out of range

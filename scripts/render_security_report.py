@@ -76,7 +76,7 @@ def render(source: Path, destination: Path) -> None:
 
     def footer(canvas, document):
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(40, 24, "Hemo Connect - DevSecOps avancado - validacao local / evidencias GitHub pendentes")
+        canvas.drawString(40, 24, "Hemo Connect - DevSecOps avancado - evidencias locais e GitHub Actions")
         canvas.drawRightString(A4[0] - 40, 24, str(document.page))
 
     document = SimpleDocTemplate(str(destination), pagesize=A4, leftMargin=40, rightMargin=40,
