@@ -48,7 +48,7 @@ jobs:
           ignore-unfixed: false
           exit-code: 1
           format: table
-          skip-dirs: .git,.venv
+          skip-dirs: .git,.venv,docs/evidencias
 
   sast:
     name: SAST - Semgrep

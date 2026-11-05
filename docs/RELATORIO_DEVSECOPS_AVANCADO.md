@@ -2,22 +2,26 @@
 
 ## Status da entrega
 
-Data local: 02/11/2026; os scanners registram tambem 03/11/2026 em UTC.
+Execucoes locais iniciadas em 02/11/2026; atualizacao das evidencias GitHub
+em 03/11/2026. Horarios das execucoes remotas sao registrados em UTC.
 Autores conforme documentacao: Marcos Zeller e Willian Donizetti; UMC.
 Consolidacao tecnica assistida por IA.
 
-**Implementacao e execucoes locais reais realizadas. Evidencias obrigatorias
-do GitHub Actions ainda pendentes. A entrega nao atende integralmente a
-rubrica enquanto os prints e artefatos publicados nao forem comprovados.**
+**Workflows publicados e execucoes GitHub aprovadas nos dois repositorios.
+SBOMs remotos baixados e validados. Prints dos tres jobs verdes do frontend
+e do backend inseridos, assim como as secoes de artefatos de ambos.
+Capturas obrigatorias reunidas; permanecem as pendencias tecnicas e de
+verificacao da protecao de branch descritas na secao 6.**
 
-O responsavel determinou manter tudo local: nenhum commit, push, PR,
-merge ou deploy. Apesar de autorizar protecao de branch, os novos workflows
-nao estao publicados e seus checks nao existem no GitHub. Exigi-los agora
-criaria bloqueio sem check executavel; a protecao nao foi alterada.
+Inicialmente, o trabalho foi limitado ao ambiente local. Posteriormente,
+o responsavel publicou os workflows e realizou os merges. As execucoes
+e os artefatos foram verificados pela API do GitHub. A configuracao de
+checks obrigatorios na protecao de branch ainda nao foi verificada;
+merge bem-sucedido nao comprova bloqueio de futuros merges com falha.
 
-Baselines locais: backend `7363db1455c191306c5af9a30a850d367478c535`;
+Baselines historicas da analise local: backend `7363db1455c191306c5af9a30a850d367478c535`;
 frontend `af546b038d0307635658cd463c475542e9531b84`.
-As alteracoes desta atividade nao possuem commit.
+Os commits das evidencias remotas sao identificados na secao 5.
 
 ## 1. Introducao a arquitetura open-source
 
@@ -165,6 +169,13 @@ O snapshot local e Windows/Python 3.12; o CI Linux gera seu proprio
 inventario. Nao se afirma igualdade com deploy ou reproducibilidade total.
 No frontend foi utilizado package-lock.json com include-dev-deps.
 
+O pacote documental e espelhado com os mesmos caminhos nos dois
+repositorios. Os inventarios historicos em docs/evidencias ficam fora
+da descoberta de dependencias pelo Trivy SCA de ambos e pelo SBOM do
+frontend, evitando confundir snapshots com dependencias atuais.
+Os manifests reais continuam analisados; o SBOM do backend usa seu
+inventario ativo gerado em security-results/sbom/inventory.
+
 CycloneDX nao executa scanner de CVEs por padrao. O Trivy SCA existente,
 com HIGH/CRITICAL, foi preservado separadamente. Informacoes de licenca
 podem ser incompletas sem site-packages/node_modules no alvo;
@@ -214,7 +225,7 @@ de scanners nao encerra pendencias operacionais da release CIA anterior.
 | SBOMs e gates reais | Backend 35; frontend 276 componentes. |
 | Helpers compartilhados | Gates e instaladores identicos nos dois repositorios. |
 | Shell Linux | Arquivos .sh fixados como LF via .gitattributes; validacao do instalador na imagem Linux. |
-| GitHub Actions/protecao de merge | Nao alterados/executados; novos workflows nao publicados. |
+| GitHub Actions/protecao de merge | Tres jobs aprovados nos dois repositorios; protecao de merge ainda nao verificada. |
 
 Testes sinteticos adicionais verificam ZAP High, JSON invalido/ausente,
 codigo de falha e SBOM sem versoes/pacotes. Esses testes nao sao incidentes.
@@ -233,6 +244,65 @@ Arquivos em [evidencias/devsecops-avancado](evidencias/devsecops-avancado):
 - bearer-frontend/bearer.json, privacy.json e relatorios antes da triagem.
 - gates/bearer-critical-fixture.json e gates/zap-unavailable.log.
 
+### GitHub Actions - execucoes e artefatos publicados
+
+Frontend: execucao 41639828429 em main, commit
+`f9e8da9f6f1a224ff4e71dc087561d18afe58d2c`, iniciada em
+03/11/2026 as 12:55:38 UTC. Os tres jobs terminaram com sucesso.
+Fonte: https://github.com/ZellerMarcos/fe-hemo-connect/actions/runs/41639828429.
+
+![Figura 1 - GitHub Actions do frontend: ZAP DAST Frontend, Bearer Privacy Frontend e Trivy SBOM Frontend aprovados em main, commit f9e8da9, em 03/11/2026. Captura fornecida pelo responsavel, sem alteracao do conteudo.](evidencias/devsecops-avancado/github-actions/frontend/actions-jobs-success.png)
+
+A Figura 1 mostra status Success, duracao de 4 min 5 s e contador de
+tres artefatos. Comprova os tres jobs verdes do frontend, mas nao mostra
+os nomes dos artefatos ou seus controles de download. A Figura 4 complementa
+essa evidencia com a listagem de artefatos do frontend.
+
+Backend: os tres jobs foram aprovados no PR #34, execucao 41640068061,
+commit `cd323b0449f183eebb3d11537ff3ab5134584a81`.
+Fonte: https://github.com/ZellerMarcos/be-hemo-connect/actions/runs/41640068061.
+
+![Figura 2 - GitHub Actions do backend: ZAP DAST Backend, Bearer Privacy Backend e Trivy SBOM Backend aprovados no Pull Request #34, branch feat/routes-for-test, commit cd323b0, em 03/11/2026. Captura fornecida pelo responsavel, sem alteracao do conteudo.](evidencias/devsecops-avancado/github-actions/backend/actions-jobs-success.png)
+
+A Figura 2 mostra status Success, duracao de 4 min 51 s e contador de
+tres artefatos. Comprova os tres jobs verdes do backend na execucao do PR,
+nao uma execucao disparada em main. Assim como a Figura 1, nao mostra
+os nomes dos artefatos nem seus controles de download.
+
+![Figura 3 - Artefatos do backend: bearer-backend, sbom-backend e zap-backend, com tamanhos, digests SHA-256 e controles de download. Captura fornecida pelo responsavel, correspondente ao PR #34, execucao 41640068061, commit cd323b0, em 03/11/2026.](evidencias/devsecops-avancado/github-actions/backend/actions-artifacts.png)
+
+A Figura 3 comprova visualmente a disponibilizacao de sbom-backend para
+download. O digest exibido, iniciado por 79b00bdc72027c18, corresponde ao
+artefato 13232771233 da execucao do PR. A origem foi correlacionada com
+os metadados da API, pois a captura nao inclui a URL ou o cabecalho da
+execucao. Nao se confunde esse artefato com o ZIP de main validado abaixo.
+
+![Figura 4 - Artefatos do frontend: bearer-frontend, sbom-frontend e zap-frontend, com tamanhos e digests SHA-256. Captura fornecida pelo responsavel, correlacionada a execucao 41639828429 em main, commit f9e8da9, em 03/11/2026.](evidencias/devsecops-avancado/github-actions/frontend/actions-artifacts.png)
+
+A Figura 4 mostra sbom-frontend com 12,3 KB e digest iniciado por
+6c859100476f51d10e905ed6407499546, correspondente ao artefato 13232541097
+da execucao de frontend identificada acima. A origem foi correlacionada
+pelos metadados da API, pois a captura nao inclui URL ou cabecalho.
+O recorte nao mostra o controle de download; a disponibilidade foi
+comprovada pelo download real do ZIP e pela validacao de seu conteudo.
+Nao se apresenta a captura isolada como prova de um botao que nao aparece.
+
+Os artefatos baixados do backend correspondem a execucao posterior em main,
+41641064293, commit `830734c213d62febd9c931667abec64cb9c2b16e`.
+Fonte: https://github.com/ZellerMarcos/be-hemo-connect/actions/runs/41641064293.
+
+Os ZIPs abaixo foram baixados do GitHub Actions, extraidos e validados:
+
+| Evidencia remota preservada | Validacao |
+| --- | --- |
+| github-actions/backend/sbom-backend.zip e sbom.json | Artefato 13233231508; CycloneDX 1.7; 34 componentes. |
+| github-actions/frontend/sbom-frontend.zip e sbom.json | Artefato 13232541097; CycloneDX 1.7; 276 componentes. |
+
+O SHA-256 de cada ZIP corresponde ao digest informado pelo GitHub.
+O backend remoto tem 34 componentes, enquanto o inventario local anterior
+tem 35: sao snapshots distintos de ambiente/resolucao, nao inventarios
+declarados identicos. Os artefatos consultados expiram em 17/11/2026.
+
 ### Prints de execucao LOCAL, nao do GitHub Actions
 
 As imagens abaixo sao recortes de capturas reais dos relatorios HTML locais
@@ -245,12 +315,15 @@ Nao mostram jobs do Actions, upload ou download remoto.
 
 | Criterio | Peso | Situacao |
 | --- | --- | --- |
-| Pipeline app/ZAP/Bearer/Trivy | 35% | Implementado e scanners locais executados; execucao Actions e triagem de degradacao DAST pendentes. |
-| Artefato e bloqueio | 25% | SBOMs e gates locais reais; upload/download e checks obrigatorios no GitHub pendentes. |
-| Relatorio e prints | 40% | PDF atualizado com capturas locais; prints obrigatorios do Actions e artefato publicado ausentes. |
+| Pipeline app/ZAP/Bearer/Trivy | 35% | Implementado e executado no Actions; tres jobs aprovados nos dois repositorios. Triagem de degradacao DAST ainda pendente. |
+| Artefato e bloqueio | 25% | SBOMs remotos baixados e validados; gates locais testados. Checks obrigatorios e bloqueio de merge ainda nao verificados. |
+| Relatorio e prints | 40% | PDF com prints dos tres jobs verdes e das secoes de artefatos de ambos, alem de capturas locais. Download dos SBOMs comprovado por verificacao real. |
 
-Nao foram fabricados jobs verdes, downloads GitHub ou PR bloqueado.
-Nao se atribui nota ou aceite integral a evidencias apenas locais.
+As evidencias locais e remotas sao identificadas separadamente.
+Nao houve comprovacao de PR bloqueado por ZAP ou Bearer nesta atividade;
+o print opcional desse bloqueio nao e apresentado como ocorrido.
+Nao se atribui nota ou aceite integral enquanto os requisitos pendentes
+nao forem comprovados.
 
 ## 6. Etapas ainda em aberto
 
@@ -259,17 +332,14 @@ Nao se atribui nota ou aceite integral a evidencias apenas locais.
    dos scans backend; aplicar correcao especifica com teste PostgreSQL
    quando autorizada e repetir os scans afetados. Revisar Medium de ZAP
    e Bearer e os titulares Unknown, sem desativar regras para obter verde.
-2. Mediante autorizacao para publicacao, revisar e versionar as alteracoes
-   dos dois repositorios; publicar em branch apropriada sem merge/deploy
-   automatico. A decisao atual proibe essa etapa.
-3. Executar workflow_dispatch ou PR para main com Python 3.12, Node 22
-   e Docker no runner; confirmar os tres jobs e todos os artefatos.
-4. Somente apos checks existentes e executados, exigir os tres novos
-   checks junto aos atuais na protecao de branch. Confirmar bloqueio de
-   merge quando falham; ligar deploy aos checks se houver autorizacao.
-5. Baixar sbom-backend e sbom-frontend no Actions e validar sbom.json.
-6. Capturar os tres jobs verdes e o artefato para download em cada
-   repositorio, com URL, data e commit; inserir no PDF final.
+2. Verificar os tres novos checks junto aos atuais na protecao de branch
+   e confirmar que uma falha impede merge. Nao inferir protecao somente
+   a partir de uma execucao aprovada ou de um merge bem-sucedido.
+3. Manter as evidencias remotas preservadas e versionar esta atualizacao
+   documental quando autorizado. Publicacao dos workflows e download/
+   validacao dos SBOMs ja foram realizados. As Figuras 1 e 2 comprovam
+   os tres jobs verdes; as Figuras 3 e 4 mostram as secoes de artefatos
+   de backend e frontend. A coleta das capturas obrigatorias esta concluida.
 
 ## 7. Referencias
 

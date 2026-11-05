@@ -14,7 +14,11 @@ def inline(text: str) -> str:
     return escape(text.replace("**", "").replace("`", ""))
 
 
-def render(source: Path, destination: Path) -> None:
+DEFAULT_FOOTER = "Hemo Connect - DevSecOps avancado - evidencias locais e GitHub Actions"
+DEFAULT_TITLE = "Hemo Connect - DevSecOps avancado"
+
+
+def render(source: Path, destination: Path, footer_text: str = DEFAULT_FOOTER, title: str = DEFAULT_TITLE) -> None:
     styles = getSampleStyleSheet()
     styles["BodyText"].fontSize = 9
     styles["BodyText"].leading = 13
@@ -76,11 +80,11 @@ def render(source: Path, destination: Path) -> None:
 
     def footer(canvas, document):
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(40, 24, "Hemo Connect - DevSecOps avancado - validacao local / evidencias GitHub pendentes")
+        canvas.drawString(40, 24, footer_text)
         canvas.drawRightString(A4[0] - 40, 24, str(document.page))
 
     document = SimpleDocTemplate(str(destination), pagesize=A4, leftMargin=40, rightMargin=40,
-                                topMargin=40, bottomMargin=40, title="Hemo Connect - DevSecOps avancado")
+                                topMargin=40, bottomMargin=40, title=title)
     document.build(story, onFirstPage=footer, onLaterPages=footer)
     print(f"PDF generated: {destination}")
 
@@ -89,5 +93,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
+    parser.add_argument("--footer", default=DEFAULT_FOOTER)
+    parser.add_argument("--title", default=DEFAULT_TITLE)
     args = parser.parse_args()
-    render(args.source, args.destination)
+    render(args.source, args.destination, args.footer, args.title)

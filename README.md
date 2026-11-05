@@ -33,11 +33,19 @@ ZAP High, erros/warnings do Automation Framework e falhas de execucao/relatorio
 bloqueiam o check. Insights internos e respostas 5xx precisam de triagem.
 
 Consulte o [relatorio e procedimento de conclusao](docs/RELATORIO_DEVSECOPS_AVANCADO.md)
-e o [PDF com evidencias locais](docs/Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf).
-ZAP e Bearer foram executados localmente; resultados, limitacoes e achados
-estao no relatorio. As evidencias de execucao no GitHub continuam pendentes.
-O mantenedor deve publicar os arquivos, executar o workflow e exigir seus checks
-na protecao de branch; o YAML sozinho nao impede merge.
+e o [PDF com evidencias locais e do GitHub Actions](docs/Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf).
+Os tres jobs foram aprovados nos dois repositorios; prints e SBOMs remotos
+validados estao nas [evidencias](docs/evidencias/devsecops-avancado).
+Os achados e limites permanecem documentados. A protecao de branch ainda
+precisa ser verificada; o YAML sozinho nao impede merge.
+
+O relatorio, PDF e a pasta de evidencias sao espelhados no frontend com
+os mesmos caminhos relativos. Este backend e a fonte de edicao e geracao:
+apos atualizar o pacote, copie os mesmos arquivos para o frontend,
+preservando a estrutura e conferindo os hashes. Os scripts exclusivos
+da API nao fazem parte desse espelhamento documental.
+O Trivy SCA exclui apenas a pasta de evidencias historicas da descoberta
+de dependencias; os manifests reais continuam analisados.
 
 Validacao dos helpers e geracao do PDF:
 
