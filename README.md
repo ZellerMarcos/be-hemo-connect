@@ -32,12 +32,12 @@ CycloneDX. Ele preserva a esteira existente e publica relatorios e `sbom.json`.
 ZAP High, erros/warnings do Automation Framework e falhas de execucao/relatorio
 bloqueiam o check. Insights internos e respostas 5xx precisam de triagem.
 
-Consulte o [relatorio e procedimento de conclusao](docs/RELATORIO_DEVSECOPS_AVANCADO.md)
-e o [PDF com evidencias locais e do GitHub Actions](docs/Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf).
+Consulte o [relatorio tecnico DevSecOps consolidado](docs/RELATORIO_TECNICO_DEVSECOPS.md)
+e o [PDF com evidencias locais e do GitHub Actions](docs/Relatorio_Tecnico_DevSecOps_Hemo_Connect.pdf).
 Os tres jobs foram aprovados nos dois repositorios; prints e SBOMs remotos
 validados estao nas [evidencias](docs/evidencias/devsecops-avancado).
-Os achados e limites permanecem documentados. A protecao de branch ainda
-precisa ser verificada; o YAML sozinho nao impede merge.
+Os achados e limites permanecem documentados. Os tres checks avancados ainda
+nao sao obrigatorios no Ruleset `proteger-main`; o YAML sozinho nao impede merge.
 
 O relatorio, PDF e a pasta de evidencias sao espelhados no frontend com
 os mesmos caminhos relativos. Este backend e a fonte de edicao e geracao:
@@ -52,7 +52,7 @@ Validacao dos helpers e geracao do PDF:
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-devsecops.txt
 .\.venv\Scripts\python.exe -m unittest discover -s scripts\security_tests -v
-.\.venv\Scripts\python.exe scripts\render_security_report.py docs\RELATORIO_DEVSECOPS_AVANCADO.md docs\Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf
+.\.venv\Scripts\python.exe scripts\render_security_report.py docs\RELATORIO_TECNICO_DEVSECOPS.md docs\Relatorio_Tecnico_DevSecOps_Hemo_Connect.pdf --footer "Hemo Connect - Relatorio Tecnico DevSecOps" --title "Hemo Connect - Relatorio Tecnico DevSecOps"
 ```
 
 ## Tecnologias
