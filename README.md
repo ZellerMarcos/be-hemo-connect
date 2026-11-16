@@ -253,6 +253,26 @@ No Render, configure essas variáveis no painel do serviço. O arquivo `.env`
 local não é utilizado pelo ambiente de produção. Para usar um remetente próprio,
 o endereço ou domínio precisa estar verificado e autorizado no Brevo.
 
+### Troca de e-mail
+
+`POST /auth/email-change/request` exige sessao ativa, senha atual e um novo
+endereco ainda nao utilizado. O e-mail anterior permanece valido enquanto a
+troca estiver pendente. O novo endereco recebe o link
+`FRONTEND_URL/confirm-email?token=...`; o anterior recebe um aviso.
+
+Configure `FRONTEND_URL` somente com a origem do frontend, sem caminho,
+query string ou fragmento (por exemplo, `https://seu-frontend.onrender.com`).
+O deploy do frontend deve preservar `/confirm-email` e a query string no
+rewrite SPA, sem redirecionar para `/index.html` ou `/reset-password`.
+
+Abrir o link exibe uma tela dedicada com avisos de seguranca, sem alterar a
+conta automaticamente. Somente o clique em **Confirmo a solicitacao de troca
+de e-mail** envia `POST /auth/email-change/confirm`. O token tem validade de
+15 minutos e uso unico; uma nova solicitacao invalida o anterior. A confirmacao
+revoga todas as sessoes e os meios pendentes de recuperacao de acesso.
+O proximo login usa o novo e-mail e a senha atual, que nao e alterada.
+Publique o frontend atualizado junto deste backend.
+
 ## Comunicacao segura e criptografia
 
 O requisito 3 foi consolidado com foco em transporte seguro e protecao de

@@ -81,9 +81,15 @@ def send_email_change_confirmation(recipient: str, confirmation_url: str) -> Non
         recipient,
         "Confirme seu novo e-mail - Hemo Connect",
         "Foi solicitada a troca do e-mail da sua conta Hemo Connect.\n\n"
-        f"Confirme o novo endereço neste link:\n{confirmation_url}\n\n"
+        f"Acesse a página de confirmação neste link:\n{confirmation_url}\n\n"
+        "Na página, leia os avisos de segurança e clique em "
+        "\"Confirmo a solicitação de troca de e-mail\" para concluir. "
+        "Apenas abrir o link não altera seu e-mail.\n\n"
+        "Após confirmar, todas as sessões serão encerradas. "
+        "Entre novamente com o novo e-mail e sua senha atual, que não será alterada.\n\n"
         "Este link é válido por 15 minutos e pode ser utilizado uma única vez.\n"
-        "Se você não reconhece a solicitação, não confirme e entre em contato com o suporte."
+        "Não compartilhe este link. Se você não reconhece a solicitação, não confirme: "
+        "acesse o site diretamente, altere sua senha e entre em contato com o suporte."
     )
 
 
