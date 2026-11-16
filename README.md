@@ -258,12 +258,20 @@ o endereço ou domínio precisa estar verificado e autorizado no Brevo.
 `POST /auth/email-change/request` exige sessao ativa, senha atual e um novo
 endereco ainda nao utilizado. O e-mail anterior permanece valido enquanto a
 troca estiver pendente. O novo endereco recebe o link
-`FRONTEND_URL/confirm-email?token=...`; o anterior recebe um aviso.
+`FRONTEND_URL/confirm-email?email_change_token=...`; o anterior recebe um aviso.
+O parametro `email_change_token` e exclusivo do aceite de troca de e-mail;
+recuperacao de senha continua usando `/reset-password?token=...`.
 
 Configure `FRONTEND_URL` somente com a origem do frontend, sem caminho,
 query string ou fragmento (por exemplo, `https://seu-frontend.onrender.com`).
 O deploy do frontend deve preservar `/confirm-email` e a query string no
 rewrite SPA, sem redirecionar para `/index.html` ou `/reset-password`.
+O backend monta o caminho de confirmacao a partir da origem, descartando
+caminho, query e fragmento legados de `FRONTEND_URL`. Se um redirecionamento
+preservar apenas a query string, o frontend reconhece `email_change_token` e
+abre a tela de aceite, nunca o formulario de nova senha. O corpo da chamada
+a API continua sendo `{"token": "..."}`; os tokens dos dois fluxos sao
+validados separadamente e nao sao intercambiaveis.
 
 Abrir o link exibe uma tela dedicada com avisos de seguranca, sem alterar a
 conta automaticamente. Somente o clique em **Confirmo a solicitacao de troca
@@ -271,7 +279,9 @@ de e-mail** envia `POST /auth/email-change/confirm`. O token tem validade de
 15 minutos e uso unico; uma nova solicitacao invalida o anterior. A confirmacao
 revoga todas as sessoes e os meios pendentes de recuperacao de acesso.
 O proximo login usa o novo e-mail e a senha atual, que nao e alterada.
-Publique o frontend atualizado junto deste backend.
+Publique o frontend atualizado junto deste backend e solicite um novo link.
+Links antigos nao recebem o novo parametro automaticamente; links antigos
+que preservam `/confirm-email?token=...` continuam compativeis.
 
 ## Comunicacao segura e criptografia
 

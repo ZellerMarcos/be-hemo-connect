@@ -4,6 +4,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode, urljoin
 
 from fastapi import HTTPException, status
 from sqlalchemy import case, func, select, update
@@ -464,7 +465,10 @@ def request_email_change(
     db.commit()
 
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
-    confirmation_url = f"{frontend_url}/confirm-email?token={raw_token}"
+    confirmation_url = (
+        f"{urljoin(frontend_url, '/confirm-email')}?"
+        f"{urlencode({'email_change_token': raw_token})}"
+    )
     try:
         send_email_change_confirmation(normalized_email, confirmation_url)
         send_email_change_notice(str(usuario.email), normalized_email)
