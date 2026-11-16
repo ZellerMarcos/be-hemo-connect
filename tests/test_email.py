@@ -4,7 +4,11 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from app.services.email import send_password_reset_email, send_two_factor_code
+from app.services.email import (
+    send_email_change_confirmation,
+    send_password_reset_email,
+    send_two_factor_code,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -43,6 +47,22 @@ def test_password_reset_email_uses_brevo_without_logging_reset_url(caplog):
     assert reset_url in request["json"]["textContent"]
     assert reset_url not in caplog.text
     assert "secret-token" not in caplog.text
+
+
+def test_email_change_message_requires_explicit_confirmation_without_logging_link(caplog):
+    confirmation_url = "http://localhost:5173/confirm-email?token=email-change-secret"
+
+    with patch("app.services.email.httpx.post") as send:
+        with caplog.at_level(logging.INFO, logger="app.services.email"):
+            send_email_change_confirmation("user@example.com", confirmation_url)
+
+    payload = send.call_args.kwargs["json"]
+    assert payload["to"] == [{"email": "user@example.com"}]
+    assert payload["subject"] == "Confirme seu novo e-mail - Hemo Connect"
+    assert confirmation_url in payload["textContent"]
+    assert '"Confirmo a solicitação de troca de e-mail"' in payload["textContent"]
+    assert "Apenas abrir o link não altera seu e-mail." in payload["textContent"]
+    assert "email-change-secret" not in caplog.text
 
 
 def test_brevo_failure_is_propagated_without_api_key_in_logs(caplog):

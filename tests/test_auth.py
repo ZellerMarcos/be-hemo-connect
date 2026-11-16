@@ -524,12 +524,18 @@ def test_email_change_keeps_old_email_until_single_use_confirmation(monkeypatch)
     assert requested.status_code == 200
     assert requested.json() == {"pending_email": "novo@example.com"}
     assert confirmations[0][0] == "novo@example.com"
+    assert confirmations[0][1].startswith("http://localhost:5173/confirm-email?token=")
     assert notices == [("joao@example.com", "novo@example.com")]
     with Session(engine) as session:
         usuario = session.scalar(select(Usuario))
         assert usuario.email == "joao@example.com"
 
     token = confirmations[0][1].split("token=")[-1]
+    wrong_flow = client.post(
+        "/auth/reset-password",
+        json={"token": token, "senha": "OutraSenhaSegura123!"},
+    )
+    assert wrong_flow.status_code == 400
     confirmed = client.post("/auth/email-change/confirm", json={"token": token})
     repeated = client.post("/auth/email-change/confirm", json={"token": token})
 

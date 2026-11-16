@@ -32,12 +32,12 @@ CycloneDX. Ele preserva a esteira existente e publica relatorios e `sbom.json`.
 ZAP High, erros/warnings do Automation Framework e falhas de execucao/relatorio
 bloqueiam o check. Insights internos e respostas 5xx precisam de triagem.
 
-Consulte o [relatorio e procedimento de conclusao](docs/RELATORIO_DEVSECOPS_AVANCADO.md)
-e o [PDF com evidencias locais e do GitHub Actions](docs/Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf).
+Consulte o [relatorio tecnico DevSecOps consolidado](docs/RELATORIO_TECNICO_DEVSECOPS.md)
+e o [PDF com evidencias locais e do GitHub Actions](docs/Relatorio_Tecnico_DevSecOps_Hemo_Connect.pdf).
 Os tres jobs foram aprovados nos dois repositorios; prints e SBOMs remotos
 validados estao nas [evidencias](docs/evidencias/devsecops-avancado).
-Os achados e limites permanecem documentados. A protecao de branch ainda
-precisa ser verificada; o YAML sozinho nao impede merge.
+Os achados e limites permanecem documentados. Os tres checks avancados ainda
+nao sao obrigatorios no Ruleset `proteger-main`; o YAML sozinho nao impede merge.
 
 O relatorio, PDF e a pasta de evidencias sao espelhados no frontend com
 os mesmos caminhos relativos. Este backend e a fonte de edicao e geracao:
@@ -52,7 +52,7 @@ Validacao dos helpers e geracao do PDF:
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-devsecops.txt
 .\.venv\Scripts\python.exe -m unittest discover -s scripts\security_tests -v
-.\.venv\Scripts\python.exe scripts\render_security_report.py docs\RELATORIO_DEVSECOPS_AVANCADO.md docs\Relatorio_DevSecOps_Avancado_Hemo_Connect.pdf
+.\.venv\Scripts\python.exe scripts\render_security_report.py docs\RELATORIO_TECNICO_DEVSECOPS.md docs\Relatorio_Tecnico_DevSecOps_Hemo_Connect.pdf --footer "Hemo Connect - Relatorio Tecnico DevSecOps" --title "Hemo Connect - Relatorio Tecnico DevSecOps"
 ```
 
 ## Tecnologias
@@ -252,6 +252,26 @@ MAIL_FROM_NAME=Hemo Connect
 No Render, configure essas variáveis no painel do serviço. O arquivo `.env`
 local não é utilizado pelo ambiente de produção. Para usar um remetente próprio,
 o endereço ou domínio precisa estar verificado e autorizado no Brevo.
+
+### Troca de e-mail
+
+`POST /auth/email-change/request` exige sessao ativa, senha atual e um novo
+endereco ainda nao utilizado. O e-mail anterior permanece valido enquanto a
+troca estiver pendente. O novo endereco recebe o link
+`FRONTEND_URL/confirm-email?token=...`; o anterior recebe um aviso.
+
+Configure `FRONTEND_URL` somente com a origem do frontend, sem caminho,
+query string ou fragmento (por exemplo, `https://seu-frontend.onrender.com`).
+O deploy do frontend deve preservar `/confirm-email` e a query string no
+rewrite SPA, sem redirecionar para `/index.html` ou `/reset-password`.
+
+Abrir o link exibe uma tela dedicada com avisos de seguranca, sem alterar a
+conta automaticamente. Somente o clique em **Confirmo a solicitacao de troca
+de e-mail** envia `POST /auth/email-change/confirm`. O token tem validade de
+15 minutos e uso unico; uma nova solicitacao invalida o anterior. A confirmacao
+revoga todas as sessoes e os meios pendentes de recuperacao de acesso.
+O proximo login usa o novo e-mail e a senha atual, que nao e alterada.
+Publique o frontend atualizado junto deste backend.
 
 ## Comunicacao segura e criptografia
 
