@@ -50,7 +50,7 @@ def test_password_reset_email_uses_brevo_without_logging_reset_url(caplog):
 
 
 def test_email_change_message_requires_explicit_confirmation_without_logging_link(caplog):
-    confirmation_url = "http://localhost:5173/confirm-email?token=email-change-secret"
+    confirmation_url = "http://localhost:5173/confirm-email?email_change_token=email-change-secret"
 
     with patch("app.services.email.httpx.post") as send:
         with caplog.at_level(logging.INFO, logger="app.services.email"):

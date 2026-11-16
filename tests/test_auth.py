@@ -1,6 +1,7 @@
 import os
 from datetime import datetime, timedelta
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 os.environ.setdefault("APP_ENV", "test")
 
@@ -501,9 +502,15 @@ def test_email_change_requires_current_password_and_preserves_session():
     assert client.get("/auth/me", headers=headers).status_code == 200
 
 
-def test_email_change_keeps_old_email_until_single_use_confirmation(monkeypatch):
+@pytest.mark.parametrize("frontend_url", [
+    "http://localhost:5173",
+    "http://localhost:5173/",
+    "http://localhost:5173/index.html",
+    "http://localhost:5173/reset-password?token=legacy#fragment",
+])
+def test_email_change_keeps_old_email_until_single_use_confirmation(monkeypatch, frontend_url):
     create_user()
-    monkeypatch.setenv("FRONTEND_URL", "http://localhost:5173")
+    monkeypatch.setenv("FRONTEND_URL", frontend_url)
     confirmations: list[tuple[str, str]] = []
     notices: list[tuple[str, str]] = []
     headers = auth_headers(engine)
@@ -524,13 +531,19 @@ def test_email_change_keeps_old_email_until_single_use_confirmation(monkeypatch)
     assert requested.status_code == 200
     assert requested.json() == {"pending_email": "novo@example.com"}
     assert confirmations[0][0] == "novo@example.com"
-    assert confirmations[0][1].startswith("http://localhost:5173/confirm-email?token=")
+    confirmation_url = urlsplit(confirmations[0][1])
+    assert confirmation_url.scheme == "http"
+    assert confirmation_url.netloc == "localhost:5173"
+    assert confirmation_url.path == "/confirm-email"
+    assert confirmation_url.fragment == ""
+    confirmation_params = parse_qs(confirmation_url.query)
+    assert set(confirmation_params) == {"email_change_token"}
     assert notices == [("joao@example.com", "novo@example.com")]
     with Session(engine) as session:
         usuario = session.scalar(select(Usuario))
         assert usuario.email == "joao@example.com"
 
-    token = confirmations[0][1].split("token=")[-1]
+    token = confirmation_params["email_change_token"][0]
     wrong_flow = client.post(
         "/auth/reset-password",
         json={"token": token, "senha": "OutraSenhaSegura123!"},
@@ -582,7 +595,11 @@ def test_email_change_invalidates_pending_password_reset():
 
     assert client.post(
         "/auth/email-change/confirm",
-        json={"token": confirmation_links[0].split("token=")[-1]},
+        json={"token": reset_links[0].split("token=")[-1]},
+    ).status_code == 400
+    assert client.post(
+        "/auth/email-change/confirm",
+        json={"token": parse_qs(urlsplit(confirmation_links[0]).query)["email_change_token"][0]},
     ).status_code == 200
     assert client.post(
         "/auth/reset-password",
