@@ -488,6 +488,49 @@ def test_password_reset_failure_is_registered_in_log(caplog):
     assert "NovaSenha123!" not in caplog.text
 
 
+@pytest.mark.parametrize(("payload", "locations"), [
+    (
+        {"new_email": "ValidationEmailSecret", "current_password": "ValidationPasswordSecret"},
+        [["body", "new_email"]],
+    ),
+    ({"new_email": "novo@example.com"}, [["body", "current_password"]]),
+    (
+        {"new_email": "novo@example.com", "current_password": ""},
+        [["body", "current_password"]],
+    ),
+    (
+        {"new_email": {"token": "ValidationEmailSecret"}, "current_password": {"password": "ValidationPasswordSecret"}},
+        [["body", "new_email"], ["body", "current_password"]],
+    ),
+    ({}, [["body", "new_email"], ["body", "current_password"]]),
+    (["ValidationBodySecret"], [["body"]]),
+])
+def test_email_change_validation_identifies_fields_without_exposing_inputs(payload, locations, caplog):
+    create_user()
+    headers = auth_headers(engine)
+    with patch("app.services.auth.send_email_change_confirmation") as confirmation, patch(
+        "app.services.auth.send_email_change_notice",
+    ) as notice:
+        response = client.post("/auth/email-change/request", json=payload, headers=headers)
+
+    assert response.status_code == 422
+    assert response.headers["Cache-Control"] == "no-store"
+    details = response.json()["detail"]
+    assert isinstance(details, list)
+    assert [item["loc"] for item in details] == locations
+    assert all(set(item) == {"loc", "type", "msg"} for item in details)
+    for secret in ("ValidationEmailSecret", "ValidationPasswordSecret", "ValidationBodySecret"):
+        assert secret not in response.text
+        assert secret not in caplog.text
+    confirmation.assert_not_called()
+    notice.assert_not_called()
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(EmailChangeToken)) == 0
+    current_user = client.get("/auth/me", headers=headers)
+    assert current_user.status_code == 200
+    assert current_user.json()["email"] == "joao@example.com"
+
+
 def test_email_change_requires_current_password_and_preserves_session():
     create_user()
     headers = auth_headers(engine)
