@@ -211,6 +211,14 @@ e usuario `INATIVO` retornam `401`; senhas incorretas podem informar tentativas
 restantes. O bloqueio temporario retorna `403` em novas tentativas.
 O login inicia o 2FA e nunca retorna `senha` ou `senha_hash`.
 
+`POST /auth/login` recebe `email` valido e `senha` como texto. Erros de
+formato, tipo ou campo ausente retornam 422 com `loc`, `type` e `msg`
+seguros, sem os valores recebidos. Isso nao indica senha incorreta:
+credenciais invalidas continuam retornando 401 e bloqueio temporario, 403.
+A troca de e-mail nao modifica o hash da senha. Depois da confirmacao,
+entre com o novo endereco confirmado e a mesma senha; o 2FA e enviado
+ao novo endereco. O e-mail anterior deixa de autenticar a conta.
+
 ## 2FA por e-mail
 
 O segundo fator usa um codigo aleatorio de seis digitos enviado ao e-mail
@@ -267,8 +275,9 @@ A solicitacao recebe JSON com `new_email` (e-mail valido) e `current_password`
 estruturado em `loc`, `type` e `msg`, indicando os campos a corrigir. As
 mensagens sao fixas e nao incluem valores recebidos, senha, token, `input`
 ou `ctx`; a resposta usa `Cache-Control: no-store`. Corpo invalido recebe
-um erro geral, sem ecoar o JSON. As demais rotas de autenticacao mantem
-suas mensagens de validacao protegidas.
+um erro geral, sem ecoar o JSON. O login tambem oferece esses detalhes
+seguros por campo (`email` e `senha`); as outras rotas de autenticacao
+mantem suas mensagens de validacao protegidas.
 Senha incorreta continua retornando 403 e e-mail igual ao atual ou ja
 utilizado retorna 409. Validacao rejeitada nao cria token nem envia e-mail.
 

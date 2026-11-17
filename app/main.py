@@ -52,27 +52,33 @@ is_production = os.getenv("APP_ENV", "development").lower() == "production"
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, error: RequestValidationError):
-    if request.url.path == "/auth/email-change/request":
+    if request.url.path in ("/auth/login", "/auth/email-change/request"):
+        is_login = request.url.path == "/auth/login"
+        email_field = "email" if is_login else "new_email"
+        password_field = "senha" if is_login else "current_password"
         details = []
         for issue in error.errors():
             # Somente campos conhecidos e mensagens fixas; nunca ecoar input, ctx ou corpo.
-            if issue["loc"] == ("body", "new_email"):
-                location = ["body", "new_email"]
+            if issue["loc"] == ("body", email_field):
+                location = ["body", email_field]
                 message = (
-                    "Informe o novo e-mail."
+                    ("Informe seu e-mail." if is_login else "Informe o novo e-mail.")
                     if issue["type"] == "missing"
                     else "Informe um endereço de e-mail válido."
                 )
-            elif issue["loc"] == ("body", "current_password"):
-                location = ["body", "current_password"]
+            elif issue["loc"] == ("body", password_field):
+                location = ["body", password_field]
                 message = (
-                    "Informe sua senha atual."
+                    ("Informe sua senha." if is_login else "Informe sua senha atual.")
                     if issue["type"] in ("missing", "string_too_short")
-                    else "A senha atual deve ser um texto."
+                    else ("A senha deve ser um texto." if is_login else "A senha atual deve ser um texto.")
                 )
             else:
                 location = ["body"]
-                message = "Envie um objeto JSON com o novo e-mail e a senha atual."
+                message = (
+                    "Envie um objeto JSON com o e-mail e a senha."
+                    if is_login else "Envie um objeto JSON com o novo e-mail e a senha atual."
+                )
             details.append({"loc": location, "type": issue["type"], "msg": message})
         return JSONResponse(
             status_code=422, content={"detail": details},
