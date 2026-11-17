@@ -52,6 +52,32 @@ is_production = os.getenv("APP_ENV", "development").lower() == "production"
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, error: RequestValidationError):
+    if request.url.path == "/auth/email-change/request":
+        details = []
+        for issue in error.errors():
+            # Somente campos conhecidos e mensagens fixas; nunca ecoar input, ctx ou corpo.
+            if issue["loc"] == ("body", "new_email"):
+                location = ["body", "new_email"]
+                message = (
+                    "Informe o novo e-mail."
+                    if issue["type"] == "missing"
+                    else "Informe um endereço de e-mail válido."
+                )
+            elif issue["loc"] == ("body", "current_password"):
+                location = ["body", "current_password"]
+                message = (
+                    "Informe sua senha atual."
+                    if issue["type"] in ("missing", "string_too_short")
+                    else "A senha atual deve ser um texto."
+                )
+            else:
+                location = ["body"]
+                message = "Envie um objeto JSON com o novo e-mail e a senha atual."
+            details.append({"loc": location, "type": issue["type"], "msg": message})
+        return JSONResponse(
+            status_code=422, content={"detail": details},
+            headers={"Cache-Control": "no-store"},
+        )
     if request.url.path.startswith(("/auth", "/usuarios")):
         return JSONResponse(status_code=422, content={
             "detail": "Confira os campos informados para esta operação.",

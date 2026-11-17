@@ -262,6 +262,16 @@ troca estiver pendente. O novo endereco recebe o link
 O parametro `email_change_token` e exclusivo do aceite de troca de e-mail;
 recuperacao de senha continua usando `/reset-password?token=...`.
 
+A solicitacao recebe JSON com `new_email` (e-mail valido) e `current_password`
+(texto obrigatorio, nao vazio). Dados invalidos retornam 422 com `detail`
+estruturado em `loc`, `type` e `msg`, indicando os campos a corrigir. As
+mensagens sao fixas e nao incluem valores recebidos, senha, token, `input`
+ou `ctx`; a resposta usa `Cache-Control: no-store`. Corpo invalido recebe
+um erro geral, sem ecoar o JSON. As demais rotas de autenticacao mantem
+suas mensagens de validacao protegidas.
+Senha incorreta continua retornando 403 e e-mail igual ao atual ou ja
+utilizado retorna 409. Validacao rejeitada nao cria token nem envia e-mail.
+
 Configure `FRONTEND_URL` somente com a origem do frontend, sem caminho,
 query string ou fragmento (por exemplo, `https://seu-frontend.onrender.com`).
 O deploy do frontend deve preservar `/confirm-email` e a query string no
