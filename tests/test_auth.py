@@ -116,6 +116,35 @@ def create_user(status: str = "ATIVO") -> None:
             session.commit()
 
 
+@pytest.mark.parametrize(("payload", "locations"), [
+    (
+        {"email": "ValidationEmailSecret", "senha": "ValidationPasswordSecret"},
+        [["body", "email"]],
+    ),
+    ({"email": "novo@example.com"}, [["body", "senha"]]),
+    (
+        {"email": "novo@example.com", "senha": {"password": "ValidationPasswordSecret"}},
+        [["body", "senha"]],
+    ),
+])
+def test_login_validation_identifies_fields_without_exposing_credentials(payload, locations, caplog):
+    with patch("app.services.auth.send_two_factor_code") as send:
+        response = client.post("/auth/login", json=payload)
+
+    assert response.status_code == 422
+    assert response.headers["Cache-Control"] == "no-store"
+    details = response.json()["detail"]
+    assert isinstance(details, list)
+    assert [item["loc"] for item in details] == locations
+    assert all(set(item) == {"loc", "type", "msg"} for item in details)
+    for secret in ("ValidationEmailSecret", "ValidationPasswordSecret"):
+        assert secret not in response.text
+        assert secret not in caplog.text
+    send.assert_not_called()
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(TwoFactorCode)) == 0
+
+
 def test_login_generates_six_digit_code_and_sends_email():
     create_user()
     sent_codes: list[str] = []
@@ -585,6 +614,7 @@ def test_email_change_keeps_old_email_until_single_use_confirmation(monkeypatch,
     with Session(engine) as session:
         usuario = session.scalar(select(Usuario))
         assert usuario.email == "joao@example.com"
+        original_password_hash = usuario.senha_hash
 
     token = confirmation_params["email_change_token"][0]
     wrong_flow = client.post(
@@ -599,6 +629,28 @@ def test_email_change_keeps_old_email_until_single_use_confirmation(monkeypatch,
     assert confirmed.json() == {"changed": True, "email": "novo@example.com"}
     assert repeated.status_code == 400
     assert client.get("/auth/me", headers=headers).status_code == 401
+    with Session(engine) as session:
+        assert session.scalar(select(Usuario.senha_hash)) == original_password_hash
+
+    sent_codes: list[tuple[str, str]] = []
+    with patch(
+        "app.services.auth.send_two_factor_code",
+        side_effect=lambda recipient, code: sent_codes.append((recipient, code)),
+    ):
+        login = client.post(
+            "/auth/login",
+            json={"email": "novo@example.com", "senha": "SenhaSegura123!"},
+        )
+    assert login.status_code == 200
+    assert sent_codes[0][0] == "novo@example.com"
+    verified = client.post(
+        "/auth/2fa/verify", json=two_factor_payload(login, sent_codes[0][1]),
+    )
+    assert verified.status_code == 200
+    assert verified.json()["usuario"]["email"] == "novo@example.com"
+    assert client.post(
+        "/auth/login", json={"email": "joao@example.com", "senha": "SenhaSegura123!"},
+    ).status_code == 401
 
 
 def test_email_change_rejects_email_already_in_use():
